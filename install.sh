@@ -39,15 +39,33 @@ echo -e "${GREEN}✓ Diretórios criados${NC}"
 echo -e "${BLUE}[3/7]${NC} Baixando scripts..."
 cd /opt/n8n-backup
 
-# Você pode substituir isso por um git clone do seu repositório
-# Por enquanto, vou criar os arquivos localmente
-echo "Os scripts devem ser colocados manualmente nos seguintes locais:"
-echo "  - /opt/n8n-backup/config.env"
-echo "  - /opt/n8n-backup/backup.sh"
-echo "  - /opt/n8n-backup/restore.sh"
-echo "  - /opt/n8n-backup/lib/logger.sh"
-echo "  - /opt/n8n-backup/lib/menu.sh"
-echo "  - /opt/n8n-backup/lib/postgres.sh"
+# Baixar arquivos do GitHub
+REPO_URL="https://raw.githubusercontent.com/yesyoudeserve/n8n-backup/main"
+
+echo "Baixando arquivos do repositório..."
+
+# Arquivos principais
+curl -sSL "${REPO_URL}/n8n-backup.sh" -o n8n-backup.sh
+curl -sSL "${REPO_URL}/backup.sh" -o backup.sh
+curl -sSL "${REPO_URL}/restore.sh" -o restore.sh
+curl -sSL "${REPO_URL}/backup-easypanel-schema.sh" -o backup-easypanel-schema.sh
+curl -sSL "${REPO_URL}/config.env" -o config.env
+curl -sSL "${REPO_URL}/rclone.conf" -o rclone.conf
+
+# Criar diretório lib
+mkdir -p lib
+
+# Arquivos da lib
+curl -sSL "${REPO_URL}/lib/logger.sh" -o lib/logger.sh
+curl -sSL "${REPO_URL}/lib/menu.sh" -o lib/menu.sh
+curl -sSL "${REPO_URL}/lib/postgres.sh" -o lib/postgres.sh
+curl -sSL "${REPO_URL}/lib/security.sh" -o lib/security.sh
+curl -sSL "${REPO_URL}/lib/recovery.sh" -o lib/recovery.sh
+curl -sSL "${REPO_URL}/lib/monitoring.sh" -o lib/monitoring.sh
+curl -sSL "${REPO_URL}/lib/setup.sh" -o lib/setup.sh
+curl -sSL "${REPO_URL}/lib/upload.sh" -o lib/upload.sh
+
+echo -e "${GREEN}✓ Todos os arquivos baixados${NC}"
 
 echo -e "${BLUE}[4/7]${NC} Configurando permissões..."
 chmod +x /opt/n8n-backup/{backup.sh,restore.sh}
@@ -72,30 +90,43 @@ read -p "Pressione ENTER quando terminar a configuração..."
 echo ""
 echo -e "${BLUE}[5/7]${NC} Encontrando credenciais do N8N..."
 
-# Tentar encontrar o encryption key automaticamente
-ENCRYPTION_KEY=$(docker exec -it $(docker ps -q -f name=n8n-main) env | grep N8N_ENCRYPTION_KEY | cut -d'=' -f2 | tr -d '\r' 2>/dev/null || echo "")
+# Tentar encontrar o encryption key automaticamente (EasyPanel usa nomes dinâmicos)
+N8N_CONTAINER=$(docker ps --filter "name=n8n" --filter "name=n8n_main" --format "{{.Names}}" | grep -E "^n8n" | head -1 || echo "")
+if [ -n "$N8N_CONTAINER" ]; then
+    ENCRYPTION_KEY=$(docker exec "$N8N_CONTAINER" env 2>/dev/null | grep N8N_ENCRYPTION_KEY | cut -d'=' -f2 | tr -d '\r' || echo "")
 
-if [ -n "$ENCRYPTION_KEY" ]; then
-    echo -e "${GREEN}✓ Encryption key encontrada!${NC}"
-    echo "   Key: ${ENCRYPTION_KEY:0:20}..."
-    echo ""
-    echo "IMPORTANTE: Salve esta chave em um local seguro!"
-    echo "Sem ela, não será possível restaurar as credenciais!"
-    echo ""
-    
-    # Atualizar config.env automaticamente
-    sed -i "s/N8N_ENCRYPTION_KEY=\"ALTERAR_COM_SUA_CHAVE_ENCRYPTION_REAL\"/N8N_ENCRYPTION_KEY=\"${ENCRYPTION_KEY}\"/" /opt/n8n-backup/config.env
+    if [ -n "$ENCRYPTION_KEY" ]; then
+        echo -e "${GREEN}✓ Encryption key encontrada automaticamente do container: ${N8N_CONTAINER}${NC}"
+        echo "   Key: ${ENCRYPTION_KEY:0:20}..."
+        echo ""
+        echo "IMPORTANTE: Salve esta chave em um local seguro!"
+        echo "Sem ela, não será possível restaurar as credenciais!"
+        echo ""
+
+        # Atualizar config.env automaticamente
+        sed -i "s/N8N_ENCRYPTION_KEY=\"ALTERAR_COM_SUA_CHAVE_ENCRYPTION_REAL\"/N8N_ENCRYPTION_KEY=\"${ENCRYPTION_KEY}\"/" /opt/n8n-backup/config.env
+    else
+        echo -e "${YELLOW}⚠ Encryption key não encontrada no container ${N8N_CONTAINER}${NC}"
+        echo "   Configure manualmente no config.env"
+    fi
 else
-    echo -e "${YELLOW}⚠ Encryption key não encontrada automaticamente${NC}"
+    echo -e "${YELLOW}⚠ Nenhum container N8N encontrado${NC}"
     echo "   Configure manualmente no config.env"
 fi
 
-# Tentar encontrar senha do PostgreSQL
-POSTGRES_PASSWORD=$(docker exec -it $(docker ps -q -f name=n8n-postgres 2>/dev/null) env 2>/dev/null | grep POSTGRES_PASSWORD | cut -d'=' -f2 | tr -d '\r' || echo "")
+# Tentar encontrar senha do PostgreSQL (EasyPanel usa nomes dinâmicos)
+POSTGRES_CONTAINER=$(docker ps --filter "name=postgres" --format "{{.Names}}" | grep -E "^n8n.*postgres" | head -1 || echo "")
+if [ -n "$POSTGRES_CONTAINER" ]; then
+    POSTGRES_PASSWORD=$(docker exec "$POSTGRES_CONTAINER" env 2>/dev/null | grep POSTGRES_PASSWORD | cut -d'=' -f2 | tr -d '\r' || echo "")
 
-if [ -n "$POSTGRES_PASSWORD" ]; then
-    echo -e "${GREEN}✓ Senha PostgreSQL encontrada!${NC}"
-    sed -i "s/N8N_POSTGRES_PASSWORD=\"ALTERAR_COM_SUA_SENHA_POSTGRES_REAL\"/N8N_POSTGRES_PASSWORD=\"${POSTGRES_PASSWORD}\"/" /opt/n8n-backup/config.env
+    if [ -n "$POSTGRES_PASSWORD" ]; then
+        echo -e "${GREEN}✓ Senha PostgreSQL encontrada automaticamente do container: ${POSTGRES_CONTAINER}${NC}"
+        sed -i "s/N8N_POSTGRES_PASSWORD=\"ALTERAR_COM_SUA_SENHA_POSTGRES_REAL\"/N8N_POSTGRES_PASSWORD=\"${POSTGRES_PASSWORD}\"/" /opt/n8n-backup/config.env
+    else
+        echo -e "${YELLOW}⚠ Senha PostgreSQL não encontrada no container ${POSTGRES_CONTAINER}${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠ Nenhum container PostgreSQL encontrado${NC}"
 fi
 
 echo -e "${BLUE}[6/7]${NC} Configurando backup automático (cron)..."

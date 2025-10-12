@@ -18,21 +18,29 @@ ENCRYPTED_CONFIG_FILE="${SCRIPT_DIR}/config.enc"
 detect_credentials() {
     log_info "🔍 Detectando credenciais automaticamente..."
 
-    # Detectar N8N Encryption Key
+    # Detectar N8N Encryption Key (EasyPanel usa nomes dinâmicos)
     if [ -z "$N8N_ENCRYPTION_KEY" ] || [ "$N8N_ENCRYPTION_KEY" = "ALTERAR_COM_SUA_CHAVE_ENCRYPTION_REAL" ]; then
-        DETECTED_N8N_KEY=$(docker exec -it $(docker ps -q -f name=n8n-main 2>/dev/null) env 2>/dev/null | grep N8N_ENCRYPTION_KEY | cut -d'=' -f2 | tr -d '\r' || echo "")
-        if [ -n "$DETECTED_N8N_KEY" ]; then
-            N8N_ENCRYPTION_KEY="$DETECTED_N8N_KEY"
-            echo -e "${GREEN}✓ N8N_ENCRYPTION_KEY detectada automaticamente${NC}"
+        # Procurar container N8N principal (pode ter sufixo dinâmico)
+        N8N_CONTAINER=$(docker ps --filter "name=n8n" --filter "name=n8n_main" --format "{{.Names}}" | grep -E "^n8n" | head -1 || echo "")
+        if [ -n "$N8N_CONTAINER" ]; then
+            DETECTED_N8N_KEY=$(docker exec "$N8N_CONTAINER" env 2>/dev/null | grep N8N_ENCRYPTION_KEY | cut -d'=' -f2 | tr -d '\r' || echo "")
+            if [ -n "$DETECTED_N8N_KEY" ]; then
+                N8N_ENCRYPTION_KEY="$DETECTED_N8N_KEY"
+                echo -e "${GREEN}✓ N8N_ENCRYPTION_KEY detectada automaticamente do container: ${N8N_CONTAINER}${NC}"
+            fi
         fi
     fi
 
-    # Detectar PostgreSQL Password
+    # Detectar PostgreSQL Password (EasyPanel usa nomes dinâmicos)
     if [ -z "$N8N_POSTGRES_PASSWORD" ] || [ "$N8N_POSTGRES_PASSWORD" = "ALTERAR_COM_SUA_SENHA_POSTGRES_REAL" ]; then
-        DETECTED_POSTGRES_PASS=$(docker exec -it $(docker ps -q -f name=n8n-postgres 2>/dev/null) env 2>/dev/null | grep POSTGRES_PASSWORD | cut -d'=' -f2 | tr -d '\r' || echo "")
-        if [ -n "$DETECTED_POSTGRES_PASS" ]; then
-            N8N_POSTGRES_PASSWORD="$DETECTED_POSTGRES_PASS"
-            echo -e "${GREEN}✓ N8N_POSTGRES_PASSWORD detectada automaticamente${NC}"
+        # Procurar container PostgreSQL (pode ter sufixo dinâmico)
+        POSTGRES_CONTAINER=$(docker ps --filter "name=postgres" --format "{{.Names}}" | grep -E "^n8n.*postgres" | head -1 || echo "")
+        if [ -n "$POSTGRES_CONTAINER" ]; then
+            DETECTED_POSTGRES_PASS=$(docker exec "$POSTGRES_CONTAINER" env 2>/dev/null | grep POSTGRES_PASSWORD | cut -d'=' -f2 | tr -d '\r' || echo "")
+            if [ -n "$DETECTED_POSTGRES_PASS" ]; then
+                N8N_POSTGRES_PASSWORD="$DETECTED_POSTGRES_PASS"
+                echo -e "${GREEN}✓ N8N_POSTGRES_PASSWORD detectada automaticamente do container: ${POSTGRES_CONTAINER}${NC}"
+            fi
         fi
     fi
 }
