@@ -15,26 +15,23 @@ Sistema profissional de backup e restauração para ambientes N8N com EasyPanel,
 
 ### Para VM Existente (Produção)
 ```bash
-# 1. Baixar e instalar
+# 1. Bootstrap completo (baixa + instala + configura)
 curl -sSL https://raw.githubusercontent.com/yesyoudeserve/n8n-backup/main/bootstrap.sh | bash
 
-# 2. Configurar credenciais
-nano /opt/n8n-backup/config.env
-
-# 3. Primeiro backup
-/opt/n8n-backup/n8n-backup.sh backup
+# 2. Sistema detecta credenciais automaticamente e pede apenas o que falta
+# 3. Primeiro backup automático
+./n8n-backup.sh backup
 ```
 
 ### Para Nova VM (Recuperação)
 ```bash
-# 1. Bootstrap + instalação
+# 1. Bootstrap completo (baixa + instala + configura)
 curl -sSL https://raw.githubusercontent.com/yesyoudeserve/n8n-backup/main/bootstrap.sh | bash
 
-# 2. Configurar rclone (copiar da VM antiga)
-cp /caminho/para/rclone.conf ~/.config/rclone/rclone.conf
-
-# 3. Recuperação completa automática
-/opt/n8n-backup/n8n-backup.sh recovery
+# 2. Sistema baixa configuração criptografada do cloud automaticamente
+# 3. Pede apenas a senha mestra para descriptografar
+# 4. Recuperação completa automática
+./n8n-backup.sh recovery
 ```
 
 ## 🎯 **Como Usar**
