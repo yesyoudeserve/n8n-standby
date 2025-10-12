@@ -2,7 +2,7 @@
 # ============================================
 # Bootstrap N8N Backup System
 # Download e setup inicial para nova VM
-# Execute: curl -sSL https://raw.githubusercontent.com/SEU_USERNAME/SEU_REPO/main/bootstrap.sh | bash
+# Execute: curl -sSL https://raw.githubusercontent.com/yesyoudeserve/n8n-backup/main/bootstrap.sh | bash
 # ============================================
 
 set -e

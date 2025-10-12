@@ -2,7 +2,7 @@
 # ============================================
 # Instalador do Sistema de Backup N8N
 # Arquivo: install.sh
-# Execute: curl -sSL https://raw.githubusercontent.com/SEU_USERNAME/SEU_REPO/main/install.sh | bash
+# Execute: curl -sSL https://raw.githubusercontent.com/yesyoudeserve/n8n-backup/main/install.sh | bash
 # ============================================
 
 set -e
