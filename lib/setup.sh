@@ -105,10 +105,12 @@ ask_credentials() {
     # Discord Webhook (opcional)
     echo ""
     echo -e "${BLUE}Discord Webhook (opcional - pressione ENTER para pular):${NC}"
-    echo -e "${YELLOW}NOTIFY_WEBHOOK:${NC}"
-    read NOTIFY_WEBHOOK
-    if [ -n "$NOTIFY_WEBHOOK" ]; then
-        echo -e "${GREEN}✓ Discord webhook configurado${NC}"
+    if [ -z "$NOTIFY_WEBHOOK" ] || [ "$NOTIFY_WEBHOOK" = "ALTERAR_COM_SEU_WEBHOOK_DISCORD_REAL" ]; then
+        echo -e "${YELLOW}NOTIFY_WEBHOOK:${NC}"
+        read NOTIFY_WEBHOOK
+        if [ -n "$NOTIFY_WEBHOOK" ]; then
+            echo -e "${GREEN}✓ Discord webhook configurado${NC}"
+        fi
     fi
 }
 
