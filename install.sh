@@ -44,26 +44,37 @@ REPO_URL="https://raw.githubusercontent.com/yesyoudeserve/n8n-backup/main"
 
 echo "Baixando arquivos do repositório..."
 
+# Verificar se os arquivos existem antes de baixar
+check_file() {
+    local file=$1
+    if curl -s --head "${REPO_URL}/${file}" | head -n 1 | grep -q "200 OK"; then
+        return 0
+    else
+        echo -e "${RED}❌ Arquivo não encontrado: ${file}${NC}"
+        return 1
+    fi
+}
+
 # Arquivos principais
-curl -sSL "${REPO_URL}/n8n-backup.sh" -o n8n-backup.sh
-curl -sSL "${REPO_URL}/backup.sh" -o backup.sh
-curl -sSL "${REPO_URL}/restore.sh" -o restore.sh
-curl -sSL "${REPO_URL}/backup-easypanel-schema.sh" -o backup-easypanel-schema.sh
-curl -sSL "${REPO_URL}/config.env" -o config.env
-curl -sSL "${REPO_URL}/rclone.conf" -o rclone.conf
+echo "Verificando arquivos principais..."
+for file in "n8n-backup.sh" "backup.sh" "restore.sh" "backup-easypanel-schema.sh" "config.env" "rclone.conf"; do
+    if check_file "$file"; then
+        curl -sSL "${REPO_URL}/${file}" -o "$file"
+        echo -e "${GREEN}✓ ${file}${NC}"
+    fi
+done
 
 # Criar diretório lib
 mkdir -p lib
 
 # Arquivos da lib
-curl -sSL "${REPO_URL}/lib/logger.sh" -o lib/logger.sh
-curl -sSL "${REPO_URL}/lib/menu.sh" -o lib/menu.sh
-curl -sSL "${REPO_URL}/lib/postgres.sh" -o lib/postgres.sh
-curl -sSL "${REPO_URL}/lib/security.sh" -o lib/security.sh
-curl -sSL "${REPO_URL}/lib/recovery.sh" -o lib/recovery.sh
-curl -sSL "${REPO_URL}/lib/monitoring.sh" -o lib/monitoring.sh
-curl -sSL "${REPO_URL}/lib/setup.sh" -o lib/setup.sh
-curl -sSL "${REPO_URL}/lib/upload.sh" -o lib/upload.sh
+echo "Verificando arquivos da biblioteca..."
+for file in "lib/logger.sh" "lib/menu.sh" "lib/postgres.sh" "lib/security.sh" "lib/recovery.sh" "lib/monitoring.sh" "lib/setup.sh" "lib/upload.sh"; do
+    if check_file "$file"; then
+        curl -sSL "${REPO_URL}/${file}" -o "$file"
+        echo -e "${GREEN}✓ ${file}${NC}"
+    fi
+done
 
 echo -e "${GREEN}✓ Todos os arquivos baixados${NC}"
 
