@@ -27,8 +27,9 @@ sudo mkdir -p /opt/n8n-backup
 sudo chown $USER:$USER /opt/n8n-backup
 cd /opt/n8n-backup
 
-# Aqui você substituiria por git clone do seu repositório
-# Por enquanto, assumindo que os arquivos já estão no diretório
+# Baixar bootstrap.sh novamente para o diretório correto
+REPO_URL="https://raw.githubusercontent.com/yesyoudeserve/n8n-backup/main"
+curl -sSL "${REPO_URL}/bootstrap.sh" -o bootstrap.sh
 
 echo -e "${GREEN}✓ Sistema baixado${NC}"
 
