@@ -44,38 +44,51 @@ REPO_URL="https://raw.githubusercontent.com/yesyoudeserve/n8n-backup/main"
 
 echo "Baixando arquivos do repositório..."
 
-# Verificar se os arquivos existem antes de baixar
-check_file() {
+# Função para baixar arquivo com verificação
+download_file() {
     local file=$1
-    if curl -s --head "${REPO_URL}/${file}" | head -n 1 | grep -q "200 OK"; then
-        return 0
+    local url="${REPO_URL}/${file}"
+
+    echo -n "Baixando ${file}... "
+    if curl -s --head "$url" | head -n 1 | grep -q "200 OK"; then
+        if curl -sSL "$url" -o "$file"; then
+            echo -e "${GREEN}✓${NC}"
+            return 0
+        else
+            echo -e "${RED}✗ (erro no download)${NC}"
+            return 1
+        fi
     else
-        echo -e "${RED}❌ Arquivo não encontrado: ${file}${NC}"
+        echo -e "${RED}✗ (arquivo não encontrado)${NC}"
         return 1
     fi
 }
 
 # Arquivos principais
-echo "Verificando arquivos principais..."
-for file in "n8n-backup.sh" "backup.sh" "restore.sh" "backup-easypanel-schema.sh" "config.env" "rclone.conf"; do
-    if check_file "$file"; then
-        curl -sSL "${REPO_URL}/${file}" -o "$file"
-        echo -e "${GREEN}✓ ${file}${NC}"
-    fi
-done
+echo "Arquivos principais:"
+download_file "n8n-backup.sh"
+download_file "backup.sh"
+download_file "restore.sh"
+download_file "backup-easypanel-schema.sh"
+download_file "config.env"
+download_file "rclone.conf"
 
 # Criar diretório lib
 mkdir -p lib
 
 # Arquivos da lib
-echo "Verificando arquivos da biblioteca..."
-for file in "lib/logger.sh" "lib/menu.sh" "lib/postgres.sh" "lib/security.sh" "lib/recovery.sh" "lib/monitoring.sh" "lib/setup.sh" "lib/upload.sh"; do
-    if check_file "$file"; then
-        curl -sSL "${REPO_URL}/${file}" -o "$file"
-        echo -e "${GREEN}✓ ${file}${NC}"
-    fi
-done
+echo ""
+echo "Arquivos da biblioteca:"
+download_file "lib/logger.sh"
+download_file "lib/menu.sh"
+download_file "lib/postgres.sh"
+download_file "lib/security.sh"
+download_file "lib/recovery.sh"
+download_file "lib/monitoring.sh"
+download_file "lib/setup.sh"
+download_file "lib/upload.sh"
 
+echo ""
 echo -e "${GREEN}✓ Todos os arquivos baixados${NC}"
 
 echo -e "${BLUE}[4/7]${NC} Configurando permissões..."
