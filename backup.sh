@@ -259,7 +259,7 @@ EOFCMD
 backup_encryption_key() {
     log_info "Salvando encryption key de forma segura..."
 
-    if [ -z "$N8N_ENCRYPTION_KEY" ] || [ "$N8N_ENCRYPTION_KEY" = "SUA_CHAVE_ENCRYPTION" ]; then
+    if [ -z "$N8N_ENCRYPTION_KEY" ] || [ "$N8N_ENCRYPTION_KEY" = "ALTERAR_COM_SUA_CHAVE_ENCRYPTION_REAL" ]; then
         log_warning "N8N_ENCRYPTION_KEY não configurada! Credenciais não poderão ser restauradas!"
         return 1
     fi

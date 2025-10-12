@@ -256,7 +256,7 @@ decrypt_sensitive_data() {
 backup_n8n_encryption_key_securely() {
     local backup_dir=$1
 
-    if [ -z "$N8N_ENCRYPTION_KEY" ] || [ "$N8N_ENCRYPTION_KEY" = "SUA_CHAVE_ENCRYPTION" ]; then
+    if [ -z "$N8N_ENCRYPTION_KEY" ] || [ "$N8N_ENCRYPTION_KEY" = "ALTERAR_COM_SUA_CHAVE_ENCRYPTION_REAL" ]; then
         log_warning "N8N_ENCRYPTION_KEY não configurada!"
         return 1
     fi

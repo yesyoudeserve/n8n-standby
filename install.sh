@@ -84,18 +84,18 @@ if [ -n "$ENCRYPTION_KEY" ]; then
     echo ""
     
     # Atualizar config.env automaticamente
-    sed -i "s/N8N_ENCRYPTION_KEY=\"SUA_CHAVE_ENCRYPTION\"/N8N_ENCRYPTION_KEY=\"${ENCRYPTION_KEY}\"/" /opt/n8n-backup/config.env
+    sed -i "s/N8N_ENCRYPTION_KEY=\"ALTERAR_COM_SUA_CHAVE_ENCRYPTION_REAL\"/N8N_ENCRYPTION_KEY=\"${ENCRYPTION_KEY}\"/" /opt/n8n-backup/config.env
 else
     echo -e "${YELLOW}⚠ Encryption key não encontrada automaticamente${NC}"
     echo "   Configure manualmente no config.env"
 fi
 
 # Tentar encontrar senha do PostgreSQL
-POSTGRES_PASSWORD=$(docker exec -it $(docker ps -q -f name=n8n-main) env | grep POSTGRES_PASSWORD | cut -d'=' -f2 | tr -d '\r' 2>/dev/null || echo "")
+POSTGRES_PASSWORD=$(docker exec -it $(docker ps -q -f name=n8n-postgres 2>/dev/null) env 2>/dev/null | grep POSTGRES_PASSWORD | cut -d'=' -f2 | tr -d '\r' || echo "")
 
 if [ -n "$POSTGRES_PASSWORD" ]; then
     echo -e "${GREEN}✓ Senha PostgreSQL encontrada!${NC}"
-    sed -i "s/N8N_POSTGRES_PASSWORD=\"SUA_SENHA_POSTGRES\"/N8N_POSTGRES_PASSWORD=\"${POSTGRES_PASSWORD}\"/" /opt/n8n-backup/config.env
+    sed -i "s/N8N_POSTGRES_PASSWORD=\"ALTERAR_COM_SUA_SENHA_POSTGRES_REAL\"/N8N_POSTGRES_PASSWORD=\"${POSTGRES_PASSWORD}\"/" /opt/n8n-backup/config.env
 fi
 
 echo -e "${BLUE}[6/7]${NC} Configurando backup automático (cron)..."
