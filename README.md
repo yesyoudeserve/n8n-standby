@@ -34,6 +34,11 @@ curl -sSL https://raw.githubusercontent.com/yesyoudeserve/n8n-backup/main/bootst
 ./n8n-backup.sh recovery
 ```
 
+### ⚠️ **IMPORTANTE: URLs Corretas**
+Certifique-se de usar a branch **main** (não master):
+- ✅ `https://raw.githubusercontent.com/yesyoudeserve/n8n-backup/main/bootstrap.sh`
+- ❌ `https://raw.githubusercontent.com/yesyoudeserve/n8n-backup/master/bootstrap.sh`
+
 ## 🎯 **Como Usar**
 
 ### Modo Automático (Recomendado)
