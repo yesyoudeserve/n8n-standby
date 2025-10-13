@@ -12,11 +12,12 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 echo -e "${BLUE}"
 echo "╔════════════════════════════════════════╗"
-echo "║  Instalador N8N Backup System v1.0    ║"
+echo "║  Instalador N8N Backup System v2.0    ║"
 echo "╚════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -53,7 +54,6 @@ if [ -n "$N8N_CONTAINER" ]; then
     DETECTED_N8N_KEY=$(docker exec "$N8N_CONTAINER" env 2>/dev/null | grep N8N_ENCRYPTION_KEY | cut -d'=' -f2 | tr -d '\r' || echo "")
     if [ -n "$DETECTED_N8N_KEY" ]; then
         echo -e "${GREEN}✓ N8N_ENCRYPTION_KEY detectada do container: ${N8N_CONTAINER}${NC}"
-        # Atualizar config.env (usando | como delimitador para evitar problemas com /)
         sed -i "s|N8N_ENCRYPTION_KEY=\"ALTERAR_COM_SUA_CHAVE_ENCRYPTION_REAL\"|N8N_ENCRYPTION_KEY=\"${DETECTED_N8N_KEY}\"|" /opt/n8n-backup/config.env
     fi
 fi
@@ -64,7 +64,6 @@ if [ -n "$POSTGRES_CONTAINER" ]; then
     DETECTED_POSTGRES_PASS=$(docker exec "$POSTGRES_CONTAINER" env 2>/dev/null | grep POSTGRES_PASSWORD | cut -d'=' -f2 | tr -d '\r' || echo "")
     if [ -n "$DETECTED_POSTGRES_PASS" ]; then
         echo -e "${GREEN}✓ N8N_POSTGRES_PASSWORD detectada do container: ${POSTGRES_CONTAINER}${NC}"
-        # Atualizar config.env (usando | como delimitador)
         sed -i "s|N8N_POSTGRES_PASSWORD=\"ALTERAR_COM_SUA_SENHA_POSTGRES_REAL\"|N8N_POSTGRES_PASSWORD=\"${DETECTED_POSTGRES_PASS}\"|" /opt/n8n-backup/config.env
     fi
 fi
@@ -91,16 +90,36 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║      INSTALAÇÃO CONCLUÍDA! 🎉          ║${NC}"
 echo -e "${GREEN}╚════════════════════════════════════════╝${NC}"
 echo ""
-echo "📋 Próximos passos:"
+echo -e "${BLUE}📋 Próximos Passos:${NC}"
 echo ""
-echo "1️⃣  Configurar credenciais (como usuário normal):"
+echo -e "${YELLOW}1️⃣  Configurar credenciais (como usuário normal):${NC}"
 echo "   cd /opt/n8n-backup"
 echo "   ./lib/setup.sh interactive"
 echo ""
-echo "2️⃣  Após configurar, fazer primeiro backup:"
+echo -e "${YELLOW}2️⃣  Fazer primeiro backup:${NC}"
 echo "   sudo ./n8n-backup.sh backup"
 echo ""
-echo "⚠️  IMPORTANTE:"
-echo "   - Execute o setup.sh SEM sudo (como usuário normal)"
-echo "   - O setup irá pedir todas as credenciais interativamente"
+echo -e "${BLUE}📚 Outros Comandos Úteis:${NC}"
+echo ""
+echo -e "${CYAN}Gerenciamento de Configuração:${NC}"
+echo "   ./lib/setup.sh edit       # Editar configurações"
+echo "   ./lib/setup.sh delete     # Apagar tudo e recomeçar"
+echo ""
+echo -e "${CYAN}Operações de Backup:${NC}"
+echo "   sudo ./n8n-backup.sh backup    # Fazer backup"
+echo "   sudo ./n8n-backup.sh restore   # Restaurar dados"
+echo "   sudo ./n8n-backup.sh status    # Ver status"
+echo "   sudo ./n8n-backup.sh recovery  # Disaster recovery"
+echo ""
+echo -e "${CYAN}Monitoramento:${NC}"
+echo "   tail -f /opt/n8n-backup/logs/backup.log"
+echo "   /opt/n8n-backup/health-check.sh"
+echo ""
+echo -e "${YELLOW}⚠️  IMPORTANTE:${NC}"
+echo "   • Configure rclone se necessário: rclone config"
+echo "   • Guarde sua senha mestra em local seguro!"
+echo "   • Backup automático: Diariamente às 3h AM"
+echo "   • Retenção local: 2 dias | Remota: 7 dias"
+echo ""
+echo -e "${GREEN}📖 Documentação completa: /opt/n8n-backup/README.md${NC}"
 echo ""
