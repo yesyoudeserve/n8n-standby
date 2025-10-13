@@ -261,6 +261,18 @@ interactive_setup() {
     # Tentar carregar configuração existente do cloud
     if load_encrypted_config; then
         echo -e "${GREEN}✓ Configuração carregada do cloud!${NC}"
+        echo -e "${GREEN}✅ Sistema já configurado. Pulando configuração inicial.${NC}"
+        echo ""
+        echo -e "${GREEN}╔════════════════════════════════════════╗${NC}"
+        echo -e "${GREEN}║    SISTEMA JÁ CONFIGURADO! 🎉         ║${NC}"
+        echo -e "${GREEN}╚════════════════════════════════════════╝${NC}"
+        echo ""
+        echo "🎯 Sistema pronto para uso:"
+        echo "   ./n8n-backup.sh backup    # Fazer backup"
+        echo "   ./n8n-backup.sh status    # Ver status"
+        echo "   ./n8n-backup.sh restore   # Restaurar dados"
+        echo ""
+        return 0
     else
         # Se não conseguiu carregar, pedir credenciais
         echo -e "${YELLOW}⚠ Configuração não encontrada. Vamos configurar...${NC}"
