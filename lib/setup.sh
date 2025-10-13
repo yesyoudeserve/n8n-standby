@@ -335,18 +335,24 @@ load_metadata_from_supabase() {
         local storage_type=$(echo "$response" | jq -r '.storageType')
         local encrypted_data=$(echo "$response" | jq -r '.storageConfig')
 
-        if [ "$storage_type" = "encrypted" ] && [ -n "$encrypted_data" ]; then
-            log_info "Descriptografando metadados..."
+    if [ "$storage_type" = "encrypted" ] && [ -n "$encrypted_data" ]; then
+        log_info "Descriptografando metadados..."
 
-            # Descriptografar metadados
-            local decrypted_data=$(echo "$encrypted_data" | base64 -d | openssl enc -d -aes-256-cbc -salt -pbkdf2 \
-                -pass pass:"$master_password" 2>/dev/null)
+        # DEBUG: Mostrar dados criptografados
+        echo "DEBUG: encrypted_data (first 50): ${encrypted_data:0:50}"
 
-            if [ $? -eq 0 ] && [ -n "$decrypted_data" ]; then
-                log_success "Metadados descriptografados"
+        # Descriptografar metadados
+        local decrypted_data=$(echo "$encrypted_data" | base64 -d | openssl enc -d -aes-256-cbc -salt -pbkdf2 \
+            -pass pass:"$master_password" 2>/dev/null)
 
-                # Carregar variáveis do metadado descriptografado
-                eval "$decrypted_data"
+        if [ $? -eq 0 ] && [ -n "$decrypted_data" ]; then
+            log_success "Metadados descriptografados"
+
+            # DEBUG: Mostrar dados descriptografados
+            echo "DEBUG: decrypted_data: $decrypted_data"
+
+            # Carregar variáveis do metadado descriptografado
+            eval "$decrypted_data"
 
                 # Verificar se as variáveis essenciais foram carregadas
                 if [ -n "$ORACLE_CONFIG_BUCKET" ] && [ -n "$B2_CONFIG_BUCKET" ]; then
