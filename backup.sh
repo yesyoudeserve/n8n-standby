@@ -25,21 +25,27 @@ BACKUP_ARCHIVE="${BACKUP_LOCAL_DIR}/${BACKUP_NAME}.tar.gz"
 main() {
     show_banner
     log_info "Iniciando backup N8N - ${TIMESTAMP}"
-    
+
+    # 🚀 ALERTA: Início do backup
+    send_discord_alert "🚀 **Backup Iniciado**\n\nTimestamp: ${TIMESTAMP}\nServidor: $(hostname)" "info"
+
     # Verificar dependências
     check_dependencies
-    
+
     # Verificar espaço em disco (requer pelo menos 500MB)
     check_disk_space 500 "${BACKUP_LOCAL_DIR}"
-    
+
     # Testar conexão PostgreSQL
     test_postgres_connection || exit 1
-    
+
     # Criar diretório temporário
     mkdir -p "${BACKUP_DIR}"
-    
+
     # Inicializar segurança
     init_security
+
+    # 📊 ALERTA: Status - Preparação concluída
+    send_discord_alert "📊 **Status: Preparação OK**\n\nDependências: ✅\nPostgreSQL: ✅\nEspaço: ✅" "info"
 
     # Executar backups
     backup_postgresql
@@ -63,6 +69,9 @@ main() {
         echo "$file_hash" > "${BACKUP_ARCHIVE}.sha256"
         log_success "Hash de integridade: ${file_hash}"
     fi
+
+    # 📤 ALERTA: Início dos uploads
+    send_discord_alert "📤 **Iniciando Uploads**\n\nArquivo criado com sucesso.\nIniciando upload para storages..." "info"
 
     # Upload para storages remotos
     upload_to_oracle
@@ -315,22 +324,27 @@ upload_to_oracle() {
         log_info "Upload para Oracle desabilitado"
         return 0
     fi
-    
+
     log_info "Fazendo upload para Oracle Object Storage..."
-    
+
+    # 📤 ALERTA: Status upload Oracle
+    send_discord_alert "📤 **Upload Oracle: Iniciado**\n\nEnviando arquivo para Oracle Object Storage..." "info"
+
     show_progress "Upload para Oracle"
-    
+
     rclone copy "${BACKUP_ARCHIVE}" "oracle:${ORACLE_BUCKET}/" --progress 2>&1 | \
         grep -oP '\d+%' | while read pct; do
             echo "$pct" | sed 's/%//'
         done || true
-    
+
     clear_progress
-    
+
     if rclone lsf "oracle:${ORACLE_BUCKET}/" | grep -q "$(basename ${BACKUP_ARCHIVE})"; then
         log_success "Upload para Oracle concluído"
+        send_discord_alert "✅ **Upload Oracle: Concluído**\n\nArquivo enviado com sucesso para Oracle Object Storage." "success"
     else
         log_error "Falha no upload para Oracle"
+        send_discord_alert "❌ **Upload Oracle: Falhou**\n\nErro ao enviar arquivo para Oracle Object Storage." "error"
     fi
 }
 
@@ -340,22 +354,27 @@ upload_to_b2() {
         log_info "Upload para B2 desabilitado"
         return 0
     fi
-    
+
     log_info "Fazendo upload para Backblaze B2..."
-    
+
+    # 📤 ALERTA: Status upload B2
+    send_discord_alert "📤 **Upload B2: Iniciado**\n\nEnviando arquivo para Backblaze B2..." "info"
+
     show_progress "Upload para B2"
-    
+
     rclone copy "${BACKUP_ARCHIVE}" "b2:${B2_BUCKET}/" --progress 2>&1 | \
         grep -oP '\d+%' | while read pct; do
             echo "$pct" | sed 's/%//'
         done || true
-    
+
     clear_progress
-    
+
     if rclone lsf "b2:${B2_BUCKET}/" | grep -q "$(basename ${BACKUP_ARCHIVE})"; then
         log_success "Upload para B2 concluído"
+        send_discord_alert "✅ **Upload B2: Concluído**\n\nArquivo enviado com sucesso para Backblaze B2." "success"
     else
         log_error "Falha no upload para B2"
+        send_discord_alert "❌ **Upload B2: Falhou**\n\nErro ao enviar arquivo para Backblaze B2." "error"
     fi
 }
 
