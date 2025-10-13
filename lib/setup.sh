@@ -11,6 +11,9 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+# Carregar funções do logger
+source "${SCRIPT_DIR}/lib/logger.sh"
+
 # Arquivo de configuração criptografada
 ENCRYPTED_CONFIG_FILE="${SCRIPT_DIR}/config.enc"
 

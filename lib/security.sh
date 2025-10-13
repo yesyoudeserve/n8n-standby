@@ -4,6 +4,9 @@
 # Arquivo: /opt/n8n-backup/lib/security.sh
 # ============================================
 
+# Carregar funções do logger
+source "${SCRIPT_DIR}/lib/logger.sh"
+
 # Chave de criptografia (mesma para backup/restore)
 # Armazenada no cloud storage para acesso multi-VM
 ENCRYPTION_KEY_FILE="${SCRIPT_DIR}/encryption.key"

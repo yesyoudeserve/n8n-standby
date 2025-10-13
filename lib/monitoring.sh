@@ -4,6 +4,9 @@
 # Arquivo: /opt/n8n-backup/lib/monitoring.sh
 # ============================================
 
+# Carregar funções do logger
+source "${SCRIPT_DIR}/lib/logger.sh"
+
 # Enviar alerta para Discord
 send_discord_alert() {
     local message=$1
