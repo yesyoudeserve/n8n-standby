@@ -15,9 +15,6 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/logger.sh"
 
-# Carregar funções de segurança
-source "${SCRIPT_DIR}/lib/security.sh"
-
 # Arquivo de configuração criptografada
 ENCRYPTED_CONFIG_FILE="${SCRIPT_DIR}/config.enc"
 
@@ -25,28 +22,31 @@ ENCRYPTED_CONFIG_FILE="${SCRIPT_DIR}/config.enc"
 detect_credentials() {
     log_info "🔍 Detectando credenciais automaticamente..."
 
-    # Detectar N8N Encryption Key (EasyPanel usa nomes dinâmicos)
+    # Carregar config.env para ver se já temos credenciais
+    if [ -f "${SCRIPT_DIR}/config.env" ]; then
+        source "${SCRIPT_DIR}/config.env"
+    fi
+
+    # Detectar N8N Encryption Key
     if [ -z "$N8N_ENCRYPTION_KEY" ] || [ "$N8N_ENCRYPTION_KEY" = "ALTERAR_COM_SUA_CHAVE_ENCRYPTION_REAL" ]; then
-        # Procurar container N8N principal (pode ter sufixo dinâmico)
         N8N_CONTAINER=$(sudo docker ps --filter "name=n8n" --format "{{.Names}}" | grep -E "^n8n" | head -1 || echo "")
         if [ -n "$N8N_CONTAINER" ]; then
             DETECTED_N8N_KEY=$(sudo docker exec "$N8N_CONTAINER" env 2>/dev/null | grep N8N_ENCRYPTION_KEY | cut -d'=' -f2 | tr -d '\r' || echo "")
             if [ -n "$DETECTED_N8N_KEY" ]; then
                 N8N_ENCRYPTION_KEY="$DETECTED_N8N_KEY"
-                echo -e "${GREEN}✓ N8N_ENCRYPTION_KEY detectada automaticamente do container: ${N8N_CONTAINER}${NC}"
+                echo -e "${GREEN}✓ N8N_ENCRYPTION_KEY detectada do container: ${N8N_CONTAINER}${NC}"
             fi
         fi
     fi
 
-    # Detectar PostgreSQL Password (EasyPanel usa nomes dinâmicos)
+    # Detectar PostgreSQL Password
     if [ -z "$N8N_POSTGRES_PASSWORD" ] || [ "$N8N_POSTGRES_PASSWORD" = "ALTERAR_COM_SUA_SENHA_POSTGRES_REAL" ]; then
-        # Procurar container PostgreSQL (pode ter sufixo dinâmico)
         POSTGRES_CONTAINER=$(sudo docker ps --filter "name=postgres" --format "{{.Names}}" | grep -E "postgres" | head -1 || echo "")
         if [ -n "$POSTGRES_CONTAINER" ]; then
             DETECTED_POSTGRES_PASS=$(sudo docker exec "$POSTGRES_CONTAINER" env 2>/dev/null | grep POSTGRES_PASSWORD | cut -d'=' -f2 | tr -d '\r' || echo "")
             if [ -n "$DETECTED_POSTGRES_PASS" ]; then
                 N8N_POSTGRES_PASSWORD="$DETECTED_POSTGRES_PASS"
-                echo -e "${GREEN}✓ N8N_POSTGRES_PASSWORD detectada automaticamente do container: ${POSTGRES_CONTAINER}${NC}"
+                echo -e "${GREEN}✓ N8N_POSTGRES_PASSWORD detectada do container: ${POSTGRES_CONTAINER}${NC}"
             fi
         fi
     fi
@@ -101,8 +101,7 @@ ask_credentials() {
         echo ""
         echo -e "${YELLOW}N8N_ENCRYPTION_KEY (encontre no EasyPanel > Settings > Encryption):${NC}"
         echo -n "> "
-        read -s N8N_ENCRYPTION_KEY
-        echo ""
+        read N8N_ENCRYPTION_KEY
         
         if [ -z "$N8N_ENCRYPTION_KEY" ]; then
             echo -e "${RED}❌ Encryption key não pode ser vazia!${NC}"
@@ -119,8 +118,7 @@ ask_credentials() {
         echo ""
         echo -e "${YELLOW}N8N_POSTGRES_PASSWORD (senha do banco PostgreSQL):${NC}"
         echo -n "> "
-        read -s N8N_POSTGRES_PASSWORD
-        echo ""
+        read N8N_POSTGRES_PASSWORD
         
         if [ -z "$N8N_POSTGRES_PASSWORD" ]; then
             echo -e "${RED}❌ Senha PostgreSQL não pode ser vazia!${NC}"
@@ -148,8 +146,8 @@ ask_credentials() {
         read ORACLE_COMPARTMENT_ID
     fi
 
-    # Bucket de configuração Oracle (separado dos dados)
-    if [ -z "$ORACLE_CONFIG_BUCKET" ] || [ "$ORACLE_CONFIG_BUCKET" = "ALTERAR_COM_SEU_BUCKET_CONFIG_REAL" ]; then
+    # Bucket de configuração Oracle
+    if [ -z "$ORACLE_CONFIG_BUCKET" ]; then
         echo -e "${YELLOW}ORACLE_CONFIG_BUCKET (bucket dedicado para configurações):${NC}"
         echo -n "> "
         read ORACLE_CONFIG_BUCKET
@@ -168,12 +166,11 @@ ask_credentials() {
     if [ -z "$B2_APPLICATION_KEY" ] || [ "$B2_APPLICATION_KEY" = "ALTERAR_COM_SUA_APP_KEY_REAL" ]; then
         echo -e "${YELLOW}B2_APPLICATION_KEY:${NC}"
         echo -n "> "
-        read -s B2_APPLICATION_KEY
-        echo ""
+        read B2_APPLICATION_KEY
     fi
 
-    # Bucket de configuração B2 (separado dos dados)
-    if [ -z "$B2_CONFIG_BUCKET" ] || [ "$B2_CONFIG_BUCKET" = "ALTERAR_COM_SEU_BUCKET_CONFIG_REAL" ]; then
+    # Bucket de configuração B2
+    if [ -z "$B2_CONFIG_BUCKET" ]; then
         echo -e "${YELLOW}B2_CONFIG_BUCKET (bucket dedicado para configurações):${NC}"
         echo -n "> "
         read B2_CONFIG_BUCKET
@@ -207,7 +204,7 @@ ask_credentials() {
     # Discord Webhook (opcional)
     echo ""
     echo -e "${BLUE}Discord Webhook (opcional - pressione ENTER para pular):${NC}"
-    if [ -z "$NOTIFY_WEBHOOK" ] || [ "$NOTIFY_WEBHOOK" = "ALTERAR_COM_SEU_WEBHOOK_DISCORD_REAL" ]; then
+    if [ -z "$NOTIFY_WEBHOOK" ]; then
         echo -n "> "
         read NOTIFY_WEBHOOK
         if [ -n "$NOTIFY_WEBHOOK" ]; then
@@ -230,9 +227,7 @@ query_supabase() {
     if [ "$action" = "get" ]; then
         payload="{\"action\":\"get\",\"backupKeyHash\":\"$backup_key_hash\"}"
     elif [ "$action" = "set" ]; then
-        # Escapar JSON para storage_config
-        local escaped_config=$(echo "$storage_config" | jq -R -s '.')
-        payload="{\"action\":\"set\",\"backupKeyHash\":\"$backup_key_hash\",\"storageType\":\"$storage_type\",\"storageConfig\":$escaped_config}"
+        payload="{\"action\":\"set\",\"backupKeyHash\":\"$backup_key_hash\",\"storageType\":\"$storage_type\",\"storageConfig\":$storage_config}"
     fi
 
     curl -s -X POST "$supabase_url" \
@@ -255,8 +250,8 @@ save_metadata_to_supabase() {
 
     local backup_key_hash=$(generate_backup_key_hash "$master_password")
 
-    # Configuração do storage
-    local storage_config="{}"
+    # Configuração do storage em formato JSON
+    local storage_config=""
     if [ "$storage_type" = "oracle" ]; then
         storage_config="{\"bucket\":\"$config_bucket\",\"namespace\":\"$ORACLE_NAMESPACE\"}"
     elif [ "$storage_type" = "b2" ]; then
