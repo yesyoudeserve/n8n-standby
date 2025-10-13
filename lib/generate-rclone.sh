@@ -20,7 +20,7 @@ generate_rclone_config() {
     # Criar diretório rclone para usuário atual
     mkdir -p ~/.config/rclone
 
-    # Gerar configuração base
+    # Gerar configuração base com variáveis expandidas
     cat > ~/.config/rclone/rclone.conf << EOF
 # ============================================
 # Configuração Rclone - Gerada automaticamente
@@ -30,10 +30,10 @@ generate_rclone_config() {
 [oracle]
 type = s3
 provider = Other
-endpoint = https://${ORACLE_NAMESPACE}.compat.objectstorage.${ORACLE_REGION}.oraclecloud.com
-access_key_id = ${ORACLE_ACCESS_KEY}
-secret_access_key = ${ORACLE_SECRET_KEY}
-region = ${ORACLE_REGION}
+endpoint = https://$ORACLE_NAMESPACE.compat.objectstorage.$ORACLE_REGION.oraclecloud.com
+access_key_id = $ORACLE_ACCESS_KEY
+secret_access_key = $ORACLE_SECRET_KEY
+region = $ORACLE_REGION
 acl = private
 
 EOF
