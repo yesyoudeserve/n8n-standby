@@ -433,7 +433,7 @@ load_encrypted_config() {
 apply_config_to_env() {
     log_info "📝 Aplicando configuração no config.env..."
 
-    # Atualizar config.env com valores reais
+    # Atualizar config.env com valores reais (usando | como delimitador para evitar problemas)
     sed -i "s|N8N_ENCRYPTION_KEY=\".*\"|N8N_ENCRYPTION_KEY=\"$N8N_ENCRYPTION_KEY\"|g" "${SCRIPT_DIR}/config.env"
     sed -i "s|N8N_POSTGRES_PASSWORD=\".*\"|N8N_POSTGRES_PASSWORD=\"$N8N_POSTGRES_PASSWORD\"|g" "${SCRIPT_DIR}/config.env"
     sed -i "s|ORACLE_NAMESPACE=\".*\"|ORACLE_NAMESPACE=\"$ORACLE_NAMESPACE\"|g" "${SCRIPT_DIR}/config.env"

@@ -53,8 +53,8 @@ if [ -n "$N8N_CONTAINER" ]; then
     DETECTED_N8N_KEY=$(docker exec "$N8N_CONTAINER" env 2>/dev/null | grep N8N_ENCRYPTION_KEY | cut -d'=' -f2 | tr -d '\r' || echo "")
     if [ -n "$DETECTED_N8N_KEY" ]; then
         echo -e "${GREEN}✓ N8N_ENCRYPTION_KEY detectada do container: ${N8N_CONTAINER}${NC}"
-        # Atualizar config.env
-        sed -i "s/N8N_ENCRYPTION_KEY=\"ALTERAR_COM_SUA_CHAVE_ENCRYPTION_REAL\"/N8N_ENCRYPTION_KEY=\"${DETECTED_N8N_KEY}\"/" /opt/n8n-backup/config.env
+        # Atualizar config.env (usando | como delimitador para evitar problemas com /)
+        sed -i "s|N8N_ENCRYPTION_KEY=\"ALTERAR_COM_SUA_CHAVE_ENCRYPTION_REAL\"|N8N_ENCRYPTION_KEY=\"${DETECTED_N8N_KEY}\"|" /opt/n8n-backup/config.env
     fi
 fi
 
