@@ -27,46 +27,47 @@ sudo mkdir -p /opt/n8n-backup
 sudo chown $USER:$USER /opt/n8n-backup
 cd /opt/n8n-backup
 
-# Baixar bootstrap.sh novamente para o diretório correto
+# Baixar todos os arquivos principais
 REPO_URL="https://raw.githubusercontent.com/yesyoudeserve/n8n-backup/main"
+
+echo "Baixando arquivos principais..."
 curl -sSL "${REPO_URL}/bootstrap.sh" -o bootstrap.sh
+curl -sSL "${REPO_URL}/install.sh" -o install.sh
+curl -sSL "${REPO_URL}/n8n-backup.sh" -o n8n-backup.sh
+curl -sSL "${REPO_URL}/backup.sh" -o backup.sh
+curl -sSL "${REPO_URL}/restore.sh" -o restore.sh
+curl -sSL "${REPO_URL}/backup-easypanel-schema.sh" -o backup-easypanel-schema.sh
+curl -sSL "${REPO_URL}/config.env" -o config.env
+curl -sSL "${REPO_URL}/rclone.conf" -o rclone.conf
+
+echo "Baixando biblioteca..."
+mkdir -p lib
+curl -sSL "${REPO_URL}/lib/logger.sh" -o lib/logger.sh
+curl -sSL "${REPO_URL}/lib/menu.sh" -o lib/menu.sh
+curl -sSL "${REPO_URL}/lib/postgres.sh" -o lib/postgres.sh
+curl -sSL "${REPO_URL}/lib/security.sh" -o lib/security.sh
+curl -sSL "${REPO_URL}/lib/recovery.sh" -o lib/recovery.sh
+curl -sSL "${REPO_URL}/lib/monitoring.sh" -o lib/monitoring.sh
+curl -sSL "${REPO_URL}/lib/setup.sh" -o lib/setup.sh
+curl -sSL "${REPO_URL}/lib/upload.sh" -o lib/upload.sh
 
 echo -e "${GREEN}✓ Sistema baixado${NC}"
 
-echo -e "${BLUE}🔧 Executando instalação...${NC}"
+echo -e "${BLUE}🔧 Configurando permissões...${NC}"
+chmod +x install.sh n8n-backup.sh bootstrap.sh backup.sh restore.sh backup-easypanel-schema.sh
+chmod +x lib/*.sh
 
-# Baixar install.sh se não existir
-if [ ! -f "install.sh" ]; then
-    curl -sSL "${REPO_URL}/install.sh" -o install.sh
-fi
-
-# Baixar n8n-backup.sh se não existir
-if [ ! -f "n8n-backup.sh" ]; then
-    curl -sSL "${REPO_URL}/n8n-backup.sh" -o n8n-backup.sh
-fi
-
-# Dar permissão de execução
-chmod +x install.sh n8n-backup.sh bootstrap.sh
-
-# Executar install.sh
-bash install.sh
-
-echo -e "${BLUE}⚙️  Executando configuração interativa...${NC}"
-exec ./lib/setup.sh interactive
+echo -e "${GREEN}✓ Permissões configuradas${NC}"
 
 echo ""
 echo -e "${GREEN}╔════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║    BOOTSTRAP CONCLUÍDO! 🎉             ║${NC}"
+echo -e "${GREEN}║    DOWNLOAD CONCLUÍDO! 🎉             ║${NC}"
 echo -e "${GREEN}╚════════════════════════════════════════╝${NC}"
 echo ""
-echo "🎯 Sistema totalmente configurado e pronto!"
+echo "📋 Próximos passos:"
 echo ""
-echo "📋 Comandos disponíveis:"
+echo "   cd /opt/n8n-backup"
+echo "   sudo ./install.sh"
 echo ""
-echo "   ./n8n-backup.sh backup     # Fazer backup"
-echo "   ./n8n-backup.sh restore    # Restaurar dados"
-echo "   ./n8n-backup.sh status     # Ver status"
-echo "   ./n8n-backup.sh recovery   # Disaster recovery"
-echo ""
-echo "💡 O sistema detecta automaticamente o modo de operação!"
+echo "💡 O instalador irá configurar tudo interativamente!"
 echo ""
