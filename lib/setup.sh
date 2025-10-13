@@ -272,9 +272,7 @@ query_supabase() {
     if [ "$action" = "get" ]; then
         payload="{\"action\":\"get\",\"backupKeyHash\":\"$backup_key_hash\"}"
     elif [ "$action" = "set" ]; then
-        # Converter string base64 em JSON válido para salvar no Supabase
-        local json_config="\"$storage_config\""
-        payload="{\"action\":\"set\",\"backupKeyHash\":\"$backup_key_hash\",\"storageType\":\"$storage_type\",\"storageConfig\":$json_config}"
+        payload="{\"action\":\"set\",\"backupKeyHash\":\"$backup_key_hash\",\"storageType\":\"$storage_type\",\"storageConfig\":\"$storage_config\"}"
     fi
 
     curl -s -X POST "$supabase_url" \
