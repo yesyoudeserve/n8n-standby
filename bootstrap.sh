@@ -46,9 +46,10 @@ if [ ! -f "n8n-backup.sh" ]; then
 fi
 
 # Dar permissão de execução
-chmod +x install.sh n8n-backup.sh
+chmod +x install.sh n8n-backup.sh bootstrap.sh
 
-./install.sh
+# Executar install.sh
+bash install.sh
 
 echo -e "${BLUE}⚙️  Executando configuração interativa...${NC}"
 ./lib/setup.sh interactive
