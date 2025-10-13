@@ -431,6 +431,12 @@ load_encrypted_config() {
 
     # DEBUG: Verificar se arquivo foi baixado
     echo "DEBUG: Verificando se arquivo foi baixado..."
+    echo "DEBUG: Comando rclone: rclone copy 'b2:n8n-config-offsite/config.enc' '${SCRIPT_DIR}/'"
+    echo "DEBUG: SCRIPT_DIR: $SCRIPT_DIR"
+    echo "DEBUG: Permissões do diretório:"
+    ls -ld "$SCRIPT_DIR"
+    echo "DEBUG: Testando rclone manualmente..."
+    rclone ls "b2:n8n-config-offsite/" 2>&1 || echo "DEBUG: rclone ls falhou"
     ls -la "${SCRIPT_DIR}/config.enc" 2>/dev/null || echo "DEBUG: Arquivo config.enc não existe no diretório"
 
     if [ "$found" = false ]; then
