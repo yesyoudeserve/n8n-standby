@@ -415,8 +415,17 @@ load_encrypted_config() {
         log_info "Metadados carregados do Supabase"
         echo "DEBUG: CONFIG_STORAGE_TYPE=$CONFIG_STORAGE_TYPE"
         echo "DEBUG: CONFIG_BUCKET=$CONFIG_BUCKET"
+
+        # Se CONFIG_BUCKET é "both", usar os buckets específicos
+        if [ "$CONFIG_BUCKET" = "both" ]; then
+            echo "DEBUG: CONFIG_BUCKET é 'both', usando buckets específicos"
+            # Não alterar, manter como está
+        fi
     else
         log_warning "Metadados não encontrados no Supabase, tentando storages diretamente"
+        # Fallback: tentar buckets padrão
+        CONFIG_STORAGE_TYPE="both"
+        CONFIG_BUCKET="both"
     fi
 
     # Tentar baixar de qualquer storage disponível
