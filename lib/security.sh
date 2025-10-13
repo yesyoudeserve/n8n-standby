@@ -9,40 +9,41 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/logger.sh"
 
 # Chave de criptografia (mesma para backup/restore)
-# Armazenada no cloud storage para acesso multi-VM
 ENCRYPTION_KEY_FILE="${SCRIPT_DIR}/encryption.key"
 CLOUD_ENCRYPTION_KEY="encryption.key.enc"
 
 # Configurar rclone para root (resolver problema mencionado)
 setup_rclone_for_root() {
-    log_info "Configurando rclone para root..."
+    log_info "Sincronizando rclone para root..."
+
+    # Verificar se config do usuário existe
+    if [ ! -f ~/.config/rclone/rclone.conf ]; then
+        log_warning "~/.config/rclone/rclone.conf não encontrado"
+        log_info "Execute: ./lib/setup.sh interactive"
+        return 1
+    fi
 
     # Criar diretório se não existir
     sudo mkdir -p /root/.config/rclone
 
-    # Copiar configuração do usuário atual
-    if [ -f ~/.config/rclone/rclone.conf ]; then
-        sudo cp ~/.config/rclone/rclone.conf /root/.config/rclone/
-        sudo chown root:root /root/.config/rclone/rclone.conf
-        sudo chmod 600 /root/.config/rclone/rclone.conf
-        log_success "Configuração rclone copiada para root"
-    else
-        log_error "Arquivo ~/.config/rclone/rclone.conf não encontrado"
-        log_info "Execute 'rclone config' primeiro como usuário normal"
-        return 1
-    fi
+    # Copiar configuração do usuário atual para root
+    sudo cp ~/.config/rclone/rclone.conf /root/.config/rclone/rclone.conf
+    sudo chown root:root /root/.config/rclone/rclone.conf
+    sudo chmod 600 /root/.config/rclone/rclone.conf
+    
+    log_success "Configuração rclone sincronizada para root"
 
     # Testar configuração
     if sudo rclone lsd oracle: > /dev/null 2>&1; then
-        log_success "Oracle rclone OK"
+        log_success "Oracle rclone OK (root)"
     else
-        log_warning "Oracle rclone falhou - verificar credenciais"
+        log_warning "Oracle rclone falhou (root) - verificar credenciais"
     fi
 
     if sudo rclone lsd b2: > /dev/null 2>&1; then
-        log_success "B2 rclone OK"
+        log_success "B2 rclone OK (root)"
     else
-        log_warning "B2 rclone falhou - verificar credenciais"
+        log_warning "B2 rclone falhou (root) - verificar credenciais"
     fi
 }
 
@@ -69,9 +70,9 @@ load_encryption_key() {
 
     # Tentar Oracle primeiro
     if [ "$ORACLE_ENABLED" = true ]; then
-        if rclone ls "oracle:${ORACLE_BUCKET}/${CLOUD_ENCRYPTION_KEY}" > /dev/null 2>&1; then
+        if sudo rclone ls "oracle:${ORACLE_BUCKET}/${CLOUD_ENCRYPTION_KEY}" > /dev/null 2>&1; then
             log_info "Baixando chave do Oracle..."
-            rclone copy "oracle:${ORACLE_BUCKET}/${CLOUD_ENCRYPTION_KEY}" "${SCRIPT_DIR}/" --quiet
+            sudo rclone copy "oracle:${ORACLE_BUCKET}/${CLOUD_ENCRYPTION_KEY}" "${SCRIPT_DIR}/" --quiet
             if [ -f "${SCRIPT_DIR}/${CLOUD_ENCRYPTION_KEY}" ]; then
                 decrypt_file "${SCRIPT_DIR}/${CLOUD_ENCRYPTION_KEY}" "$ENCRYPTION_KEY_FILE"
                 rm "${SCRIPT_DIR}/${CLOUD_ENCRYPTION_KEY}"
@@ -84,9 +85,9 @@ load_encryption_key() {
 
     # Tentar B2
     if [ "$B2_ENABLED" = true ]; then
-        if rclone ls "b2:${B2_BUCKET}/${CLOUD_ENCRYPTION_KEY}" > /dev/null 2>&1; then
+        if sudo rclone ls "b2:${B2_BUCKET}/${CLOUD_ENCRYPTION_KEY}" > /dev/null 2>&1; then
             log_info "Baixando chave do B2..."
-            rclone copy "b2:${B2_BUCKET}/${CLOUD_ENCRYPTION_KEY}" "${SCRIPT_DIR}/" --quiet
+            sudo rclone copy "b2:${B2_BUCKET}/${CLOUD_ENCRYPTION_KEY}" "${SCRIPT_DIR}/" --quiet
             if [ -f "${SCRIPT_DIR}/${CLOUD_ENCRYPTION_KEY}" ]; then
                 decrypt_file "${SCRIPT_DIR}/${CLOUD_ENCRYPTION_KEY}" "$ENCRYPTION_KEY_FILE"
                 rm "${SCRIPT_DIR}/${CLOUD_ENCRYPTION_KEY}"
@@ -117,7 +118,7 @@ save_encryption_key_to_cloud() {
     local uploaded=false
 
     if [ "$ORACLE_ENABLED" = true ]; then
-        rclone copy "$temp_encrypted" "oracle:${ORACLE_BUCKET}/${CLOUD_ENCRYPTION_KEY}" --quiet
+        sudo rclone copy "$temp_encrypted" "oracle:${ORACLE_BUCKET}/${CLOUD_ENCRYPTION_KEY}" --quiet
         if [ $? -eq 0 ]; then
             log_success "Chave salva no Oracle"
             uploaded=true
@@ -125,7 +126,7 @@ save_encryption_key_to_cloud() {
     fi
 
     if [ "$B2_ENABLED" = true ]; then
-        rclone copy "$temp_encrypted" "b2:${B2_BUCKET}/${CLOUD_ENCRYPTION_KEY}" --quiet
+        sudo rclone copy "$temp_encrypted" "b2:${B2_BUCKET}/${CLOUD_ENCRYPTION_KEY}" --quiet
         if [ $? -eq 0 ]; then
             log_success "Chave salva no B2"
             uploaded=true
@@ -224,7 +225,7 @@ encrypt_sensitive_data() {
         "encryption_key.txt"
         "postgres_password.txt"
         "easypanel_configs/*_env.json"
-        "config.env"  # NOVO: Configurações também!
+        "config.env"
     )
 
     for pattern in "${sensitive_files[@]}"; do
@@ -232,7 +233,7 @@ encrypt_sensitive_data() {
             if [ -f "$file" ]; then
                 local encrypted_file="${file}.enc"
                 if encrypt_file "$file" "$encrypted_file"; then
-                    rm "$file"  # Remover arquivo original
+                    rm "$file"
                     log_info "Criptografado: $(basename "$file")"
                 fi
             fi
@@ -246,11 +247,10 @@ decrypt_sensitive_data() {
 
     log_info "Descriptografando dados sensíveis..."
 
-    # Arquivos a descriptografar
     find "$backup_dir" -name "*.enc" | while read encrypted_file; do
         local original_file="${encrypted_file%.enc}"
         if decrypt_file "$encrypted_file" "$original_file"; then
-            rm "$encrypted_file"  # Remover arquivo criptografado
+            rm "$encrypted_file"
             log_info "Descriptografado: $(basename "$original_file")"
         fi
     done
@@ -292,7 +292,7 @@ validate_master_password() {
 
 # Inicializar segurança
 init_security() {
-    # Resolver problema do rclone com root
+    # Sincronizar rclone com root
     setup_rclone_for_root
 
     # Carregar chave de criptografia

@@ -50,6 +50,7 @@ curl -sSL "${REPO_URL}/lib/recovery.sh" -o lib/recovery.sh
 curl -sSL "${REPO_URL}/lib/monitoring.sh" -o lib/monitoring.sh
 curl -sSL "${REPO_URL}/lib/setup.sh" -o lib/setup.sh
 curl -sSL "${REPO_URL}/lib/upload.sh" -o lib/upload.sh
+curl -sSL "${REPO_URL}/lib/generate-rclone.sh" -o lib/generate-rclone.sh
 
 echo -e "${GREEN}✓ Sistema baixado${NC}"
 
