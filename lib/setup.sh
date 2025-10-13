@@ -76,6 +76,7 @@ ask_credentials() {
 
     # DEBUG: Mostrar que a senha foi capturada
     echo "DEBUG: Senha mestra tem ${#BACKUP_MASTER_PASSWORD} caracteres"
+    echo "DEBUG: Conteúdo da senha (primeiros 10 chars): '${BACKUP_MASTER_PASSWORD:0:10}...'"
 
     # N8N Encryption Key
     if [ -z "$N8N_ENCRYPTION_KEY" ] || [ "$N8N_ENCRYPTION_KEY" = "ALTERAR_COM_SUA_CHAVE_ENCRYPTION_REAL" ]; then
