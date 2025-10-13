@@ -11,6 +11,12 @@ source "${SCRIPT_DIR}/lib/logger.sh"
 generate_rclone_config() {
     log_info "Gerando configuração rclone..."
 
+    # DEBUG: Mostrar variáveis sendo usadas
+    echo "DEBUG: ORACLE_NAMESPACE=$ORACLE_NAMESPACE"
+    echo "DEBUG: ORACLE_REGION=$ORACLE_REGION"
+    echo "DEBUG: ORACLE_ACCESS_KEY=${ORACLE_ACCESS_KEY:0:8}..."
+    echo "DEBUG: B2_ACCOUNT_ID=${B2_ACCOUNT_ID:0:8}..."
+
     # Criar diretório rclone para usuário atual
     mkdir -p ~/.config/rclone
 
