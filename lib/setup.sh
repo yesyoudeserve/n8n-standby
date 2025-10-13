@@ -130,20 +130,33 @@ ask_credentials() {
         echo -e "${GREEN}✓ N8N_POSTGRES_PASSWORD já detectada${NC}"
     fi
 
-    # Oracle Credentials
+    # Oracle Credentials (S3-compatible API)
     echo ""
-    echo -e "${BLUE}Oracle Object Storage:${NC}"
+    echo -e "${BLUE}Oracle Object Storage (S3-compatible):${NC}"
     
     if [ -z "$ORACLE_NAMESPACE" ] || [ "$ORACLE_NAMESPACE" = "ALTERAR_COM_SEU_NAMESPACE_REAL" ]; then
-        echo -e "${YELLOW}ORACLE_NAMESPACE:${NC}"
+        echo -e "${YELLOW}ORACLE_NAMESPACE (ex: axqwerty12345):${NC}"
         echo -n "> "
         read ORACLE_NAMESPACE
     fi
 
-    if [ -z "$ORACLE_COMPARTMENT_ID" ] || [ "$ORACLE_COMPARTMENT_ID" = "ALTERAR_COM_SEU_COMPARTMENT_ID_REAL" ]; then
-        echo -e "${YELLOW}ORACLE_COMPARTMENT_ID:${NC}"
+    if [ -z "$ORACLE_REGION" ] || [ "$ORACLE_REGION" = "eu-madrid-1" ]; then
+        echo -e "${YELLOW}ORACLE_REGION (ex: eu-madrid-1):${NC}"
         echo -n "> "
-        read ORACLE_COMPARTMENT_ID
+        read ORACLE_REGION
+    fi
+
+    if [ -z "$ORACLE_ACCESS_KEY" ]; then
+        echo -e "${YELLOW}ORACLE_ACCESS_KEY (Customer Secret Key - Access Key):${NC}"
+        echo -n "> "
+        read ORACLE_ACCESS_KEY
+    fi
+
+    if [ -z "$ORACLE_SECRET_KEY" ]; then
+        echo -e "${YELLOW}ORACLE_SECRET_KEY (Customer Secret Key - Secret):${NC}"
+        echo -n "> "
+        read -s ORACLE_SECRET_KEY
+        echo ""
     fi
 
     # Bucket de configuração Oracle
@@ -152,6 +165,15 @@ ask_credentials() {
         echo -n "> "
         read ORACLE_CONFIG_BUCKET
     fi
+    
+    # Bucket de dados Oracle
+    if [ -z "$ORACLE_BUCKET" ]; then
+        echo -e "${YELLOW}ORACLE_BUCKET (bucket para backups):${NC}"
+        echo -n "> "
+        read ORACLE_BUCKET
+    fi
+    
+    echo -e "${GREEN}✓ Oracle credentials configuradas${NC}"
 
     # B2 Credentials
     echo ""
@@ -302,11 +324,15 @@ save_encrypted_config() {
 N8N_ENCRYPTION_KEY="$N8N_ENCRYPTION_KEY"
 N8N_POSTGRES_PASSWORD="$N8N_POSTGRES_PASSWORD"
 ORACLE_NAMESPACE="$ORACLE_NAMESPACE"
-ORACLE_COMPARTMENT_ID="$ORACLE_COMPARTMENT_ID"
+ORACLE_REGION="$ORACLE_REGION"
+ORACLE_ACCESS_KEY="$ORACLE_ACCESS_KEY"
+ORACLE_SECRET_KEY="$ORACLE_SECRET_KEY"
 ORACLE_CONFIG_BUCKET="$ORACLE_CONFIG_BUCKET"
+ORACLE_BUCKET="$ORACLE_BUCKET"
 B2_ACCOUNT_ID="$B2_ACCOUNT_ID"
 B2_APPLICATION_KEY="$B2_APPLICATION_KEY"
 B2_CONFIG_BUCKET="$B2_CONFIG_BUCKET"
+B2_BUCKET="$B2_BUCKET"
 NOTIFY_WEBHOOK="$NOTIFY_WEBHOOK"
 BACKUP_MASTER_PASSWORD="$BACKUP_MASTER_PASSWORD"
 CONFIG_STORAGE_TYPE="$CONFIG_STORAGE_TYPE"
@@ -437,9 +463,15 @@ apply_config_to_env() {
     sed -i "s|N8N_ENCRYPTION_KEY=\".*\"|N8N_ENCRYPTION_KEY=\"$N8N_ENCRYPTION_KEY\"|g" "${SCRIPT_DIR}/config.env"
     sed -i "s|N8N_POSTGRES_PASSWORD=\".*\"|N8N_POSTGRES_PASSWORD=\"$N8N_POSTGRES_PASSWORD\"|g" "${SCRIPT_DIR}/config.env"
     sed -i "s|ORACLE_NAMESPACE=\".*\"|ORACLE_NAMESPACE=\"$ORACLE_NAMESPACE\"|g" "${SCRIPT_DIR}/config.env"
-    sed -i "s|ORACLE_COMPARTMENT_ID=\".*\"|ORACLE_COMPARTMENT_ID=\"$ORACLE_COMPARTMENT_ID\"|g" "${SCRIPT_DIR}/config.env"
+    sed -i "s|ORACLE_REGION=\".*\"|ORACLE_REGION=\"$ORACLE_REGION\"|g" "${SCRIPT_DIR}/config.env"
+    sed -i "s|ORACLE_ACCESS_KEY=\".*\"|ORACLE_ACCESS_KEY=\"$ORACLE_ACCESS_KEY\"|g" "${SCRIPT_DIR}/config.env"
+    sed -i "s|ORACLE_SECRET_KEY=\".*\"|ORACLE_SECRET_KEY=\"$ORACLE_SECRET_KEY\"|g" "${SCRIPT_DIR}/config.env"
+    sed -i "s|ORACLE_CONFIG_BUCKET=\".*\"|ORACLE_CONFIG_BUCKET=\"$ORACLE_CONFIG_BUCKET\"|g" "${SCRIPT_DIR}/config.env"
+    sed -i "s|ORACLE_BUCKET=\".*\"|ORACLE_BUCKET=\"$ORACLE_BUCKET\"|g" "${SCRIPT_DIR}/config.env"
     sed -i "s|B2_ACCOUNT_ID=\".*\"|B2_ACCOUNT_ID=\"$B2_ACCOUNT_ID\"|g" "${SCRIPT_DIR}/config.env"
     sed -i "s|B2_APPLICATION_KEY=\".*\"|B2_APPLICATION_KEY=\"$B2_APPLICATION_KEY\"|g" "${SCRIPT_DIR}/config.env"
+    sed -i "s|B2_CONFIG_BUCKET=\".*\"|B2_CONFIG_BUCKET=\"$B2_CONFIG_BUCKET\"|g" "${SCRIPT_DIR}/config.env"
+    sed -i "s|B2_BUCKET=\".*\"|B2_BUCKET=\"$B2_BUCKET\"|g" "${SCRIPT_DIR}/config.env"
     sed -i "s|BACKUP_MASTER_PASSWORD=\".*\"|BACKUP_MASTER_PASSWORD=\"$BACKUP_MASTER_PASSWORD\"|g" "${SCRIPT_DIR}/config.env"
 
     if [ -n "$NOTIFY_WEBHOOK" ]; then
@@ -481,6 +513,11 @@ interactive_setup() {
 
     # Aplicar configuração
     apply_config_to_env
+
+    # Gerar configuração rclone automaticamente
+    log_info "Gerando configuração rclone..."
+    source "${SCRIPT_DIR}/lib/generate-rclone.sh"
+    generate_rclone_config
 
     # Salvar criptografado no cloud
     save_encrypted_config
