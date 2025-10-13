@@ -103,6 +103,12 @@ ask_credentials() {
         read ORACLE_COMPARTMENT_ID
     fi
 
+    # Bucket de configuração Oracle (separado dos dados)
+    if [ -z "$ORACLE_CONFIG_BUCKET" ] || [ "$ORACLE_CONFIG_BUCKET" = "ALTERAR_COM_SEU_BUCKET_CONFIG_REAL" ]; then
+        echo -e "${YELLOW}ORACLE_CONFIG_BUCKET (bucket dedicado para configurações):${NC}"
+        read ORACLE_CONFIG_BUCKET
+    fi
+
     # B2 Credentials
     echo ""
     echo -e "${BLUE}Backblaze B2:${NC}"
@@ -114,8 +120,39 @@ ask_credentials() {
     if [ -z "$B2_APPLICATION_KEY" ] || [ "$B2_APPLICATION_KEY" = "ALTERAR_COM_SUA_APP_KEY_REAL" ]; then
         echo -e "${YELLOW}B2_APPLICATION_KEY:${NC}"
         read -s B2_APPLICATION_KEY
+        echo ""
+    fi
+
+    # Bucket de configuração B2 (separado dos dados)
+    if [ -z "$B2_CONFIG_BUCKET" ] || [ "$B2_CONFIG_BUCKET" = "ALTERAR_COM_SEU_BUCKET_CONFIG_REAL" ]; then
+        echo -e "${YELLOW}B2_CONFIG_BUCKET (bucket dedicado para configurações):${NC}"
+        read B2_CONFIG_BUCKET
         echo -e "${GREEN}✓ B2 credentials configuradas${NC}"
     fi
+
+    # Escolher storage para configurações
+    echo ""
+    echo -e "${BLUE}Escolha o storage para salvar as configurações:${NC}"
+    echo "1) Oracle Object Storage"
+    echo "2) Backblaze B2"
+    echo -e "${YELLOW}Opção (1 ou 2):${NC}"
+    read STORAGE_CHOICE
+
+    case $STORAGE_CHOICE in
+        1)
+            CONFIG_STORAGE_TYPE="oracle"
+            CONFIG_BUCKET="$ORACLE_CONFIG_BUCKET"
+            ;;
+        2)
+            CONFIG_STORAGE_TYPE="b2"
+            CONFIG_BUCKET="$B2_CONFIG_BUCKET"
+            ;;
+        *)
+            echo -e "${RED}❌ Opção inválida. Usando Oracle por padrão.${NC}"
+            CONFIG_STORAGE_TYPE="oracle"
+            CONFIG_BUCKET="$ORACLE_CONFIG_BUCKET"
+            ;;
+    esac
 
     # Discord Webhook (opcional)
     echo ""
@@ -162,12 +199,90 @@ EOF
 
 # Upload da configuração criptografada
 upload_encrypted_config() {
-    if [ "$ORACLE_ENABLED" = true ]; then
-        rclone copy "$ENCRYPTED_CONFIG_FILE" "oracle:${ORACLE_BUCKET}/config/" --quiet 2>/dev/null || true
+    # Usar bucket de configuração dedicado baseado na escolha do usuário
+    if [ "$CONFIG_STORAGE_TYPE" = "oracle" ]; then
+        rclone copy "$ENCRYPTED_CONFIG_FILE" "oracle:${CONFIG_BUCKET}/" --quiet 2>/dev/null || true
+    elif [ "$CONFIG_STORAGE_TYPE" = "b2" ]; then
+        rclone copy "$ENCRYPTED_CONFIG_FILE" "b2:${CONFIG_BUCKET}/" --quiet 2>/dev/null || true
+    fi
+}
+
+# Função para consultar Supabase
+query_supabase() {
+    local action="$1"
+    local backup_key_hash="$2"
+    local storage_type="${3:-}"
+    local storage_config="${4:-}"
+
+    local supabase_url="https://jpxctcxpxmevwiyaxkqu.supabase.co/functions/v1/backup-metadata"
+    local backup_secret="xt6F2!iRMul*y9"
+
+    local payload=""
+    if [ "$action" = "get" ]; then
+        payload="{\"action\":\"get\",\"backupKeyHash\":\"$backup_key_hash\"}"
+    elif [ "$action" = "set" ]; then
+        # Escapar JSON para storage_config
+        local escaped_config=$(echo "$storage_config" | jq -R -s '.')
+        payload="{\"action\":\"set\",\"backupKeyHash\":\"$backup_key_hash\",\"storageType\":\"$storage_type\",\"storageConfig\":$escaped_config}"
     fi
 
-    if [ "$B2_ENABLED" = true ]; then
-        rclone copy "$ENCRYPTED_CONFIG_FILE" "b2:${B2_BUCKET}/config/" --quiet 2>/dev/null || true
+    curl -s -X POST "$supabase_url" \
+         -H "Authorization: Bearer $backup_secret" \
+         -H "Content-Type: application/json" \
+         -d "$payload"
+}
+
+# Função para gerar hash da senha mestra
+generate_backup_key_hash() {
+    local master_password="$1"
+    echo -n "$master_password" | sha256sum | awk '{print $1}'
+}
+
+# Função para salvar metadados no Supabase
+save_metadata_to_supabase() {
+    local master_password="$1"
+    local storage_type="$2"
+    local config_bucket="$3"
+
+    local backup_key_hash=$(generate_backup_key_hash "$master_password")
+
+    # Configuração do storage
+    local storage_config="{}"
+    if [ "$storage_type" = "oracle" ]; then
+        storage_config="{\"bucket\":\"$config_bucket\",\"namespace\":\"$ORACLE_NAMESPACE\"}"
+    elif [ "$storage_type" = "b2" ]; then
+        storage_config="{\"bucket\":\"$config_bucket\"}"
+    fi
+
+    log_info "Salvando metadados no Supabase..."
+    local response=$(query_supabase "set" "$backup_key_hash" "$storage_type" "$storage_config")
+
+    if echo "$response" | jq -e '.success' > /dev/null 2>&1; then
+        log_success "Metadados salvos no Supabase"
+        return 0
+    else
+        log_error "Falha ao salvar metadados: $response"
+        return 1
+    fi
+}
+
+# Função para buscar metadados do Supabase
+load_metadata_from_supabase() {
+    local master_password="$1"
+
+    local backup_key_hash=$(generate_backup_key_hash "$master_password")
+
+    log_info "Buscando metadados no Supabase..."
+    local response=$(query_supabase "get" "$backup_key_hash")
+
+    if echo "$response" | jq -e '.storageType' > /dev/null 2>&1; then
+        CONFIG_STORAGE_TYPE=$(echo "$response" | jq -r '.storageType')
+        CONFIG_BUCKET=$(echo "$response" | jq -r '.storageConfig.bucket')
+        log_success "Metadados carregados do Supabase"
+        return 0
+    else
+        log_error "Falha ao carregar metadados: $response"
+        return 1
     fi
 }
 
@@ -175,56 +290,54 @@ upload_encrypted_config() {
 load_encrypted_config() {
     log_info "📥 Carregando configuração do cloud..."
 
-    local loaded=false
+    # Primeiro tentar carregar metadados do Supabase
+    echo -e "${BLUE}🔑 Digite sua senha mestra para carregar as configurações:${NC}"
+    read -s MASTER_PASSWORD
+    echo ""
 
-    # Tentar Oracle primeiro
-    if [ "$ORACLE_ENABLED" = true ]; then
-        if rclone ls "oracle:${ORACLE_BUCKET}/config/config.enc" > /dev/null 2>&1; then
-            rclone copy "oracle:${ORACLE_BUCKET}/config/config.enc" "${SCRIPT_DIR}/" --quiet
-            loaded=true
+    if load_metadata_from_supabase "$MASTER_PASSWORD"; then
+        # Agora tentar baixar a configuração do storage identificado
+        if [ "$CONFIG_STORAGE_TYPE" = "oracle" ]; then
+            if rclone ls "oracle:${CONFIG_BUCKET}/config.enc" > /dev/null 2>&1; then
+                rclone copy "oracle:${CONFIG_BUCKET}/config.enc" "${SCRIPT_DIR}/" --quiet
+            fi
+        elif [ "$CONFIG_STORAGE_TYPE" = "b2" ]; then
+            if rclone ls "b2:${CONFIG_BUCKET}/config.enc" > /dev/null 2>&1; then
+                rclone copy "b2:${CONFIG_BUCKET}/config.enc" "${SCRIPT_DIR}/" --quiet
+            fi
         fi
-    fi
 
-    # Tentar B2 se não conseguiu do Oracle
-    if [ "$loaded" = false ] && [ "$B2_ENABLED" = true ]; then
-        if rclone ls "b2:${B2_BUCKET}/config/config.enc" > /dev/null 2>&1; then
-            rclone copy "b2:${B2_BUCKET}/config/config.enc" "${SCRIPT_DIR}/" --quiet
-            loaded=true
-        fi
-    fi
+        if [ -f "$ENCRYPTED_CONFIG_FILE" ]; then
+            # Tentar descriptografar
+            local temp_decrypted="${SCRIPT_DIR}/temp_decrypted.env"
+            echo "$MASTER_PASSWORD" | openssl enc -d -aes-256-cbc -salt -pbkdf2 \
+                -pass stdin \
+                -in "$ENCRYPTED_CONFIG_FILE" \
+                -out "$temp_decrypted" 2>/dev/null
 
-    if [ "$loaded" = true ] && [ -f "$ENCRYPTED_CONFIG_FILE" ]; then
-        # Pedir senha mestra para descriptografar
-        echo -e "${BLUE}🔑 Digite sua senha mestra para carregar as configurações:${NC}"
-        read -s MASTER_PASSWORD
-        echo ""
+            if [ $? -eq 0 ]; then
+                # Carregar variáveis
+                source "$temp_decrypted"
 
-        # Tentar descriptografar
-        local temp_decrypted="${SCRIPT_DIR}/temp_decrypted.env"
-        echo "$MASTER_PASSWORD" | openssl enc -d -aes-256-cbc -salt -pbkdf2 \
-            -pass stdin \
-            -in "$ENCRYPTED_CONFIG_FILE" \
-            -out "$temp_decrypted" 2>/dev/null
+                # Atualizar BACKUP_MASTER_PASSWORD
+                BACKUP_MASTER_PASSWORD="$MASTER_PASSWORD"
 
-        if [ $? -eq 0 ]; then
-            # Carregar variáveis
-            source "$temp_decrypted"
+                # Limpar arquivo temporário
+                rm "$temp_decrypted"
 
-            # Atualizar BACKUP_MASTER_PASSWORD
-            BACKUP_MASTER_PASSWORD="$MASTER_PASSWORD"
-
-            # Limpar arquivo temporário
-            rm "$temp_decrypted"
-
-            echo -e "${GREEN}✓ Configuração carregada com sucesso!${NC}"
-            return 0
+                echo -e "${GREEN}✓ Configuração carregada com sucesso!${NC}"
+                return 0
+            else
+                echo -e "${RED}❌ Senha mestra incorreta!${NC}"
+                rm "$temp_decrypted" 2>/dev/null || true
+                return 1
+            fi
         else
-            echo -e "${RED}❌ Senha mestra incorreta!${NC}"
-            rm "$temp_decrypted" 2>/dev/null || true
+            echo -e "${YELLOW}⚠ Arquivo de configuração não encontrado no storage${NC}"
             return 1
         fi
     else
-        echo -e "${YELLOW}⚠ Nenhuma configuração encontrada no cloud${NC}"
+        echo -e "${YELLOW}⚠ Nenhuma configuração encontrada no Supabase${NC}"
         return 1
     fi
 }
@@ -284,6 +397,9 @@ interactive_setup() {
 
     # Salvar criptografado no cloud para futuras instalações
     save_encrypted_config
+
+    # Salvar metadados no Supabase
+    save_metadata_to_supabase "$BACKUP_MASTER_PASSWORD" "$CONFIG_STORAGE_TYPE" "$CONFIG_BUCKET"
 
     echo ""
     echo -e "${GREEN}╔════════════════════════════════════════╗${NC}"
