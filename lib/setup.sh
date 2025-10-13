@@ -468,6 +468,9 @@ load_encrypted_config() {
     if load_metadata_from_supabase "$MASTER_PASSWORD"; then
         log_info "Metadados carregados do Supabase - configurando rclone..."
 
+        # DEBUG: Verificar variáveis ANTES de gerar rclone
+        echo "DEBUG: Antes do rclone - ORACLE_NAMESPACE=$ORACLE_NAMESPACE"
+
         # Gerar configuração rclone com as credenciais carregadas
         source "${SCRIPT_DIR}/lib/generate-rclone.sh"
         generate_rclone_config
