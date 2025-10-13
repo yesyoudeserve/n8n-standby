@@ -303,7 +303,7 @@ B2_CONFIG_KEY=\"$B2_CONFIG_KEY\""
 
     # Criptografar metadados com a senha mestra
     local encrypted_metadata=$(echo "$metadata" | openssl enc -aes-256-cbc -salt -pbkdf2 \
-        -pass pass:"$BACKUP_MASTER_PASSWORD" -base64)
+        -pass pass:"$BACKUP_MASTER_PASSWORD" | base64 -w 0)
 
     log_info "Salvando metadados criptografados no Supabase..."
     local response=$(query_supabase "set" "$backup_key_hash" "encrypted" "$encrypted_metadata")
