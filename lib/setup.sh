@@ -272,7 +272,9 @@ query_supabase() {
     if [ "$action" = "get" ]; then
         payload="{\"action\":\"get\",\"backupKeyHash\":\"$backup_key_hash\"}"
     elif [ "$action" = "set" ]; then
-        payload="{\"action\":\"set\",\"backupKeyHash\":\"$backup_key_hash\",\"storageType\":\"$storage_type\",\"storageConfig\":$storage_config}"
+        # Converter string base64 em JSON válido para salvar no Supabase
+        local json_config="\"$storage_config\""
+        payload="{\"action\":\"set\",\"backupKeyHash\":\"$backup_key_hash\",\"storageType\":\"$storage_type\",\"storageConfig\":$json_config}"
     fi
 
     curl -s -X POST "$supabase_url" \
@@ -312,29 +314,8 @@ B2_CONFIG_KEY=\"$B2_CONFIG_KEY\""
     echo "DEBUG: encrypted_metadata length: ${#encrypted_metadata}"
     echo "DEBUG: encrypted_metadata preview: ${encrypted_metadata:0:50}..."
 
-    # Usar jq para construir JSON válido
-    local json_payload=$(jq -n \
-        --arg action "set" \
-        --arg keyHash "$backup_key_hash" \
-        --arg type "encrypted" \
-        --arg config "$encrypted_metadata" \
-        '{action: $action, backupKeyHash: $keyHash, storageType: $type, storageConfig: $config}')
-
-    echo "DEBUG: JSON payload completo:"
-    echo "$json_payload" | jq '.'
-
-    # Enviar JSON construído pelo jq
-    echo "DEBUG: Enviando para URL: $supabase_url"
-    echo "DEBUG: Payload JSON:"
-    echo "$json_payload"
-
-    local response=$(curl -s -X POST "$supabase_url" \
-        -H "Authorization: Bearer $backup_secret" \
-        -H "Content-Type: application/json" \
-        -d "$json_payload")
-
-    echo "DEBUG: Resposta do Supabase:"
-    echo "$response"
+    # Enviar via query_supabase() - mais simples e consistente
+    local response=$(query_supabase "set" "$backup_key_hash" "encrypted" "$encrypted_metadata")
 
     if echo "$response" | jq -e '.success' > /dev/null 2>&1; then
         log_success "Metadados criptografados salvos"
