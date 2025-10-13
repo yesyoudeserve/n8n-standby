@@ -44,52 +44,30 @@ REPO_URL="https://raw.githubusercontent.com/yesyoudeserve/n8n-backup/main"
 
 echo "Baixando arquivos do repositório..."
 
-# Função para baixar arquivo com verificação
-download_file() {
-    local file=$1
-    local url="${REPO_URL}/${file}"
-
-    echo -n "Baixando ${file}... "
-    if curl -s --head "$url" | head -n 1 | grep -q "200 OK"; then
-        if curl -sSL "$url" -o "$file"; then
-            echo -e "${GREEN}✓${NC}"
-            return 0
-        else
-            echo -e "${RED}✗ (erro no download)${NC}"
-            return 1
-        fi
-    else
-        echo -e "${RED}✗ (arquivo não encontrado)${NC}"
-        return 1
-    fi
-}
-
-# Arquivos principais
-echo "Arquivos principais:"
-download_file "n8n-backup.sh"
-download_file "backup.sh"
-download_file "restore.sh"
-download_file "backup-easypanel-schema.sh"
-download_file "config.env"
-download_file "rclone.conf"
-
-# Criar diretório lib
+# Criar diretório lib primeiro
 mkdir -p lib
 
-# Arquivos da lib
-echo ""
-echo "Arquivos da biblioteca:"
-download_file "lib/logger.sh"
-download_file "lib/menu.sh"
-download_file "lib/postgres.sh"
-download_file "lib/security.sh"
-download_file "lib/recovery.sh"
-download_file "lib/monitoring.sh"
-download_file "lib/setup.sh"
-download_file "lib/upload.sh"
+# Baixar TODOS os arquivos necessários
+echo "Baixando arquivos principais..."
+curl -sSL "${REPO_URL}/n8n-backup.sh" -o n8n-backup.sh && echo "✓ n8n-backup.sh"
+curl -sSL "${REPO_URL}/backup.sh" -o backup.sh && echo "✓ backup.sh"
+curl -sSL "${REPO_URL}/restore.sh" -o restore.sh && echo "✓ restore.sh"
+curl -sSL "${REPO_URL}/backup-easypanel-schema.sh" -o backup-easypanel-schema.sh && echo "✓ backup-easypanel-schema.sh"
+curl -sSL "${REPO_URL}/config.env" -o config.env && echo "✓ config.env"
+curl -sSL "${REPO_URL}/rclone.conf" -o rclone.conf && echo "✓ rclone.conf"
+
+echo "Baixando arquivos da biblioteca..."
+curl -sSL "${REPO_URL}/lib/logger.sh" -o lib/logger.sh && echo "✓ lib/logger.sh"
+curl -sSL "${REPO_URL}/lib/menu.sh" -o lib/menu.sh && echo "✓ lib/menu.sh"
+curl -sSL "${REPO_URL}/lib/postgres.sh" -o lib/postgres.sh && echo "✓ lib/postgres.sh"
+curl -sSL "${REPO_URL}/lib/security.sh" -o lib/security.sh && echo "✓ lib/security.sh"
+curl -sSL "${REPO_URL}/lib/recovery.sh" -o lib/recovery.sh && echo "✓ lib/recovery.sh"
+curl -sSL "${REPO_URL}/lib/monitoring.sh" -o lib/monitoring.sh && echo "✓ lib/monitoring.sh"
+curl -sSL "${REPO_URL}/lib/setup.sh" -o lib/setup.sh && echo "✓ lib/setup.sh"
+curl -sSL "${REPO_URL}/lib/upload.sh" -o lib/upload.sh && echo "✓ lib/upload.sh"
 
 echo ""
-echo -e "${GREEN}✓ Todos os arquivos baixados${NC}"
+echo -e "${GREEN}✓ Todos os arquivos baixados com sucesso!${NC}"
 
 echo -e "${BLUE}[4/7]${NC} Configurando permissões..."
 chmod +x /opt/n8n-backup/{backup.sh,restore.sh}
