@@ -410,25 +410,45 @@ load_encrypted_config() {
 
     log_info "📥 Buscando configuração..."
 
+    # Primeiro tentar carregar metadados do Supabase para saber qual storage usar
+    if load_metadata_from_supabase "$MASTER_PASSWORD"; then
+        log_info "Metadados carregados do Supabase"
+        echo "DEBUG: CONFIG_STORAGE_TYPE=$CONFIG_STORAGE_TYPE"
+        echo "DEBUG: CONFIG_BUCKET=$CONFIG_BUCKET"
+    else
+        log_warning "Metadados não encontrados no Supabase, tentando storages diretamente"
+    fi
+
     # Tentar baixar de qualquer storage disponível
     local found=false
-    
+
     # Tentar Oracle primeiro
     if rclone ls "oracle:" > /dev/null 2>&1; then
+        echo "DEBUG: Tentando Oracle..."
         if rclone copy "oracle:${ORACLE_CONFIG_BUCKET}/config.enc" "${SCRIPT_DIR}/" --quiet 2>/dev/null; then
             log_info "Encontrado no Oracle"
             found=true
+        else
+            echo "DEBUG: Oracle falhou"
         fi
+    else
+        echo "DEBUG: Oracle não disponível"
     fi
 
     # Se não achou, tentar B2
     if [ "$found" = false ] && rclone ls "b2:" > /dev/null 2>&1; then
+        echo "DEBUG: Tentando B2..."
         local b2_remote="b2"
         [ "$B2_USE_SEPARATE_KEYS" = "true" ] && b2_remote="b2-config"
+        echo "DEBUG: b2_remote=$b2_remote, B2_CONFIG_BUCKET=$B2_CONFIG_BUCKET"
         if rclone copy "${b2_remote}:${B2_CONFIG_BUCKET}/config.enc" "${SCRIPT_DIR}/" --quiet 2>/dev/null; then
             log_info "Encontrado no B2"
             found=true
+        else
+            echo "DEBUG: B2 falhou"
         fi
+    else
+        echo "DEBUG: B2 não disponível ou já encontrado"
     fi
 
     # DEBUG: Verificar se arquivo foi baixado
