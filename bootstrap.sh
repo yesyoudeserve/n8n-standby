@@ -34,6 +34,12 @@ curl -sSL "${REPO_URL}/bootstrap.sh" -o bootstrap.sh
 echo -e "${GREEN}✓ Sistema baixado${NC}"
 
 echo -e "${BLUE}🔧 Executando instalação...${NC}"
+
+# Baixar install.sh se não existir
+if [ ! -f "install.sh" ]; then
+    curl -sSL "${REPO_URL}/install.sh" -o install.sh
+fi
+
 ./install.sh
 
 echo -e "${BLUE}⚙️  Executando configuração interativa...${NC}"
