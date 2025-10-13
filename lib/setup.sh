@@ -690,6 +690,25 @@ edit_mode() {
     done
 }
 
+# Função principal
+main() {
+    case "${1:-interactive}" in
+        interactive)
+            interactive_setup
+            ;;
+        edit)
+            edit_mode
+            ;;
+        detect)
+            detect_credentials
+            ;;
+        *)
+            echo "Uso: $0 {interactive|edit|detect}"
+            exit 1
+            ;;
+    esac
+}
+
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"
 fi
