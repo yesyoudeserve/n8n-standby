@@ -40,8 +40,13 @@ if [ ! -f "install.sh" ]; then
     curl -sSL "${REPO_URL}/install.sh" -o install.sh
 fi
 
+# Baixar n8n-backup.sh se não existir
+if [ ! -f "n8n-backup.sh" ]; then
+    curl -sSL "${REPO_URL}/n8n-backup.sh" -o n8n-backup.sh
+fi
+
 # Dar permissão de execução
-chmod +x install.sh
+chmod +x install.sh n8n-backup.sh
 
 ./install.sh
 
