@@ -40,6 +40,9 @@ if [ ! -f "install.sh" ]; then
     curl -sSL "${REPO_URL}/install.sh" -o install.sh
 fi
 
+# Dar permissão de execução
+chmod +x install.sh
+
 ./install.sh
 
 echo -e "${BLUE}⚙️  Executando configuração interativa...${NC}"
