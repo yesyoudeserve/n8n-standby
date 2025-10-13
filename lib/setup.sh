@@ -2,6 +2,7 @@
 # ============================================
 # Configuração Automática e Interativa
 # Arquivo: /opt/n8n-backup/lib/setup.sh
+# Versão: 2.0 Final
 # ============================================
 
 # Cores
@@ -175,11 +176,30 @@ ask_credentials() {
         fi
     done
 
+    echo ""
+    echo -e "${BLUE}Oracle Buckets:${NC}"
+    
     # Bucket de dados Oracle
     while [ -z "$ORACLE_BUCKET" ]; do
-        echo -e "${YELLOW}ORACLE_BUCKET (bucket para backups de dados):${NC}"
+        echo -e "${YELLOW}ORACLE_BUCKET (bucket para backups de DADOS - ex: n8n-backups):${NC}"
         echo -n "> "
-        rea
+        read ORACLE_BUCKET
+        if [ -z "$ORACLE_BUCKET" ]; then
+            echo -e "${RED}❌ Bucket de dados não pode ser vazio!${NC}"
+        fi
+    done
+
+    # Bucket de configuração Oracle
+    while [ -z "$ORACLE_CONFIG_BUCKET" ]; do
+        echo -e "${YELLOW}ORACLE_CONFIG_BUCKET (bucket para CONFIGURAÇÕES - ex: n8n-config):${NC}"
+        echo -n "> "
+        read ORACLE_CONFIG_BUCKET
+        if [ -z "$ORACLE_CONFIG_BUCKET" ]; then
+            echo -e "${RED}❌ Bucket de config não pode ser vazio!${NC}"
+        fi
+    done
+    
+    echo -e "${GREEN}✓ Oracle credentials configuradas${NC}"
 
     # B2 Credentials
     echo ""
@@ -469,7 +489,7 @@ upload_encrypted_config() {
                 log_error "Falha ao enviar para Oracle"
             fi
         else
-            log_error "Oracle rclone não configurado! Execute: rclone config"
+            log_error "Oracle rclone não configurado!"
         fi
     elif [ "$CONFIG_STORAGE_TYPE" = "b2" ]; then
         # Verificar se usa chaves separadas
@@ -487,7 +507,7 @@ upload_encrypted_config() {
                 log_error "Falha ao enviar para B2"
             fi
         else
-            log_error "B2 rclone não configurado! Execute: rclone config"
+            log_error "B2 rclone não configurado!"
         fi
     fi
 }
@@ -555,7 +575,7 @@ load_encrypted_config() {
 apply_config_to_env() {
     log_info "📝 Aplicando configuração no config.env..."
 
-    # Atualizar config.env com valores reais (usando | como delimitador para evitar problemas)
+    # Atualizar config.env com valores reais (usando | como delimitador)
     sed -i "s|N8N_ENCRYPTION_KEY=\".*\"|N8N_ENCRYPTION_KEY=\"$N8N_ENCRYPTION_KEY\"|g" "${SCRIPT_DIR}/config.env"
     sed -i "s|N8N_POSTGRES_PASSWORD=\".*\"|N8N_POSTGRES_PASSWORD=\"$N8N_POSTGRES_PASSWORD\"|g" "${SCRIPT_DIR}/config.env"
     sed -i "s|ORACLE_NAMESPACE=\".*\"|ORACLE_NAMESPACE=\"$ORACLE_NAMESPACE\"|g" "${SCRIPT_DIR}/config.env"
@@ -565,7 +585,10 @@ apply_config_to_env() {
     sed -i "s|ORACLE_CONFIG_BUCKET=\".*\"|ORACLE_CONFIG_BUCKET=\"$ORACLE_CONFIG_BUCKET\"|g" "${SCRIPT_DIR}/config.env"
     sed -i "s|ORACLE_BUCKET=\".*\"|ORACLE_BUCKET=\"$ORACLE_BUCKET\"|g" "${SCRIPT_DIR}/config.env"
     sed -i "s|B2_ACCOUNT_ID=\".*\"|B2_ACCOUNT_ID=\"$B2_ACCOUNT_ID\"|g" "${SCRIPT_DIR}/config.env"
-    sed -i "s|B2_APPLICATION_KEY=\".*\"|B2_APPLICATION_KEY=\"$B2_APPLICATION_KEY\"|g" "${SCRIPT_DIR}/config.env"
+    sed -i "s|B2_APPLICATION_KEY=\".*\"|B2_APPLICATION_KEY=\"${B2_APPLICATION_KEY:-}\"|g" "${SCRIPT_DIR}/config.env"
+    sed -i "s|B2_USE_SEPARATE_KEYS=.*|B2_USE_SEPARATE_KEYS=${B2_USE_SEPARATE_KEYS:-false}|g" "${SCRIPT_DIR}/config.env"
+    sed -i "s|B2_DATA_KEY=\".*\"|B2_DATA_KEY=\"${B2_DATA_KEY:-}\"|g" "${SCRIPT_DIR}/config.env"
+    sed -i "s|B2_CONFIG_KEY=\".*\"|B2_CONFIG_KEY=\"${B2_CONFIG_KEY:-}\"|g" "${SCRIPT_DIR}/config.env"
     sed -i "s|B2_CONFIG_BUCKET=\".*\"|B2_CONFIG_BUCKET=\"$B2_CONFIG_BUCKET\"|g" "${SCRIPT_DIR}/config.env"
     sed -i "s|B2_BUCKET=\".*\"|B2_BUCKET=\"$B2_BUCKET\"|g" "${SCRIPT_DIR}/config.env"
     sed -i "s|BACKUP_MASTER_PASSWORD=\".*\"|BACKUP_MASTER_PASSWORD=\"$BACKUP_MASTER_PASSWORD\"|g" "${SCRIPT_DIR}/config.env"
@@ -627,8 +650,8 @@ interactive_setup() {
     echo -e "${GREEN}╚════════════════════════════════════════╝${NC}"
     echo ""
     echo "🎯 Próximos passos:"
-    echo "   1. Configure o rclone: rclone config"
-    echo "   2. Primeiro backup: sudo ./n8n-backup.sh backup"
+    echo "   1. Primeiro backup: sudo ./n8n-backup.sh backup"
+    echo "   2. Ver status: sudo ./n8n-backup.sh status"
     echo ""
 }
 
