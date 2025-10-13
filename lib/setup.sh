@@ -287,37 +287,78 @@ generate_backup_key_hash() {
 
 save_metadata_to_supabase() {
     local backup_key_hash=$(generate_backup_key_hash "$BACKUP_MASTER_PASSWORD")
-    local storage_config=""
-    
-    if [ "$CONFIG_STORAGE_TYPE" = "oracle" ]; then
-        storage_config="{\"bucket\":\"$CONFIG_BUCKET\",\"namespace\":\"$ORACLE_NAMESPACE\"}"
-    else
-        storage_config="{\"bucket\":\"$CONFIG_BUCKET\"}"
-    fi
 
-    log_info "Salvando metadados no Supabase..."
-    local response=$(query_supabase "set" "$backup_key_hash" "$CONFIG_STORAGE_TYPE" "$storage_config")
+    # Criar metadados essenciais para acesso aos storages
+    local metadata="ORACLE_CONFIG_BUCKET=\"$ORACLE_CONFIG_BUCKET\"
+ORACLE_NAMESPACE=\"$ORACLE_NAMESPACE\"
+ORACLE_REGION=\"$ORACLE_REGION\"
+ORACLE_ACCESS_KEY=\"$ORACLE_ACCESS_KEY\"
+ORACLE_SECRET_KEY=\"$ORACLE_SECRET_KEY\"
+B2_CONFIG_BUCKET=\"$B2_CONFIG_BUCKET\"
+B2_ACCOUNT_ID=\"$B2_ACCOUNT_ID\"
+B2_APPLICATION_KEY=\"$B2_APPLICATION_KEY\"
+B2_USE_SEPARATE_KEYS=\"$B2_USE_SEPARATE_KEYS\"
+B2_DATA_KEY=\"$B2_DATA_KEY\"
+B2_CONFIG_KEY=\"$B2_CONFIG_KEY\""
+
+    # Criptografar metadados com a senha mestra
+    local encrypted_metadata=$(echo "$metadata" | openssl enc -aes-256-cbc -salt -pbkdf2 \
+        -pass pass:"$BACKUP_MASTER_PASSWORD" -base64)
+
+    log_info "Salvando metadados criptografados no Supabase..."
+    local response=$(query_supabase "set" "$backup_key_hash" "encrypted" "$encrypted_metadata")
 
     if echo "$response" | jq -e '.success' > /dev/null 2>&1; then
-        log_success "Metadados salvos"
+        log_success "Metadados criptografados salvos"
         return 0
     else
-        log_error "Falha: $response"
+        log_error "Falha ao salvar metadados: $response"
         return 1
     fi
 }
 
 load_metadata_from_supabase() {
-    local backup_key_hash=$(generate_backup_key_hash "$1")
-    
-    log_info "Buscando metadados..."
+    local master_password="$1"
+    local backup_key_hash=$(generate_backup_key_hash "$master_password")
+
+    log_info "Buscando metadados criptografados..."
     local response=$(query_supabase "get" "$backup_key_hash")
 
     if echo "$response" | jq -e '.storageType' > /dev/null 2>&1; then
-        CONFIG_STORAGE_TYPE=$(echo "$response" | jq -r '.storageType')
-        CONFIG_BUCKET=$(echo "$response" | jq -r '.storageConfig.bucket')
-        return 0
+        local storage_type=$(echo "$response" | jq -r '.storageType')
+        local encrypted_data=$(echo "$response" | jq -r '.storageConfig')
+
+        if [ "$storage_type" = "encrypted" ] && [ -n "$encrypted_data" ]; then
+            log_info "Descriptografando metadados..."
+
+            # Descriptografar metadados
+            local decrypted_data=$(echo "$encrypted_data" | base64 -d | openssl enc -d -aes-256-cbc -salt -pbkdf2 \
+                -pass pass:"$master_password" 2>/dev/null)
+
+            if [ $? -eq 0 ] && [ -n "$decrypted_data" ]; then
+                log_success "Metadados descriptografados"
+
+                # Carregar variáveis do metadado descriptografado
+                eval "$decrypted_data"
+
+                # Verificar se as variáveis essenciais foram carregadas
+                if [ -n "$ORACLE_CONFIG_BUCKET" ] && [ -n "$B2_CONFIG_BUCKET" ]; then
+                    log_success "Credenciais dos storages carregadas"
+                    return 0
+                else
+                    log_error "Metadados incompletos"
+                    return 1
+                fi
+            else
+                log_error "Falha na descriptografia dos metadados"
+                return 1
+            fi
+        else
+            log_error "Formato de metadados inválido"
+            return 1
+        fi
     else
+        log_warning "Metadados não encontrados: $response"
         return 1
     fi
 }
@@ -412,15 +453,13 @@ load_encrypted_config() {
 
     # Primeiro tentar carregar metadados do Supabase para saber qual storage usar
     if load_metadata_from_supabase "$MASTER_PASSWORD"; then
-        log_info "Metadados carregados do Supabase"
-        echo "DEBUG: CONFIG_STORAGE_TYPE=$CONFIG_STORAGE_TYPE"
-        echo "DEBUG: CONFIG_BUCKET=$CONFIG_BUCKET"
+        log_info "Metadados carregados do Supabase - configurando rclone..."
 
-        # Se CONFIG_BUCKET é "both", usar os buckets específicos
-        if [ "$CONFIG_BUCKET" = "both" ]; then
-            echo "DEBUG: CONFIG_BUCKET é 'both', usando buckets específicos"
-            # Não alterar, manter como está
-        fi
+        # Gerar configuração rclone com as credenciais carregadas
+        source "${SCRIPT_DIR}/lib/generate-rclone.sh"
+        generate_rclone_config
+
+        log_success "Rclone configurado com credenciais do Supabase"
     else
         log_warning "Metadados não encontrados no Supabase, tentando storages diretamente"
         # Fallback: tentar buckets padrão
