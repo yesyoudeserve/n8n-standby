@@ -436,22 +436,33 @@ load_encrypted_config() {
 
     # Descriptografar
     if [ -f "$ENCRYPTED_CONFIG_FILE" ]; then
+        echo "DEBUG: Arquivo encontrado: $ENCRYPTED_CONFIG_FILE"
+        echo "DEBUG: Tamanho do arquivo: $(stat -c%s "$ENCRYPTED_CONFIG_FILE" 2>/dev/null || echo 'N/A')"
+        echo "DEBUG: Executando descriptografia..."
+
         local temp_decrypted="${SCRIPT_DIR}/temp_decrypted.env"
         openssl enc -d -aes-256-cbc -salt -pbkdf2 \
             -pass pass:"$MASTER_PASSWORD" \
             -in "$ENCRYPTED_CONFIG_FILE" \
             -out "$temp_decrypted" 2>/dev/null
 
-        if [ $? -eq 0 ]; then
+        local openssl_exit_code=$?
+        echo "DEBUG: Código de saída openssl: $openssl_exit_code"
+
+        if [ $openssl_exit_code -eq 0 ]; then
+            echo "DEBUG: Descriptografia bem-sucedida, carregando variáveis..."
             source "$temp_decrypted"
             BACKUP_MASTER_PASSWORD="$MASTER_PASSWORD"
             rm "$temp_decrypted"
             echo -e "${GREEN}✓ Configuração carregada do cloud!${NC}"
             return 0
         else
-            echo -e "${RED}❌ Senha incorreta!${NC}"
+            echo "DEBUG: Falha na descriptografia"
+            echo -e "${RED}❌ Senha incorreta ou arquivo corrompido!${NC}"
             rm "$temp_decrypted" 2>/dev/null
         fi
+    else
+        echo "DEBUG: Arquivo $ENCRYPTED_CONFIG_FILE não encontrado"
     fi
     
     return 1
