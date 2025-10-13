@@ -52,7 +52,7 @@ chmod +x install.sh n8n-backup.sh bootstrap.sh
 bash install.sh
 
 echo -e "${BLUE}⚙️  Executando configuração interativa...${NC}"
-./lib/setup.sh interactive
+exec ./lib/setup.sh interactive
 
 echo ""
 echo -e "${GREEN}╔════════════════════════════════════════╗${NC}"
