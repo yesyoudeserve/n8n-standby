@@ -323,7 +323,11 @@ B2_CONFIG_KEY=\"$B2_CONFIG_KEY\""
     echo "DEBUG: JSON payload completo:"
     echo "$json_payload" | jq '.'
 
-    local response=$(query_supabase "set" "$backup_key_hash" "encrypted" "$encrypted_metadata")
+    # Enviar JSON construído pelo jq
+    local response=$(curl -s -X POST "$supabase_url" \
+        -H "Authorization: Bearer $backup_secret" \
+        -H "Content-Type: application/json" \
+        -d "$json_payload")
 
     if echo "$response" | jq -e '.success' > /dev/null 2>&1; then
         log_success "Metadados criptografados salvos"
