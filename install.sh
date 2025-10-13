@@ -64,8 +64,8 @@ if [ -n "$POSTGRES_CONTAINER" ]; then
     DETECTED_POSTGRES_PASS=$(docker exec "$POSTGRES_CONTAINER" env 2>/dev/null | grep POSTGRES_PASSWORD | cut -d'=' -f2 | tr -d '\r' || echo "")
     if [ -n "$DETECTED_POSTGRES_PASS" ]; then
         echo -e "${GREEN}✓ N8N_POSTGRES_PASSWORD detectada do container: ${POSTGRES_CONTAINER}${NC}"
-        # Atualizar config.env
-        sed -i "s/N8N_POSTGRES_PASSWORD=\"ALTERAR_COM_SUA_SENHA_POSTGRES_REAL\"/N8N_POSTGRES_PASSWORD=\"${DETECTED_POSTGRES_PASS}\"/" /opt/n8n-backup/config.env
+        # Atualizar config.env (usando | como delimitador)
+        sed -i "s|N8N_POSTGRES_PASSWORD=\"ALTERAR_COM_SUA_SENHA_POSTGRES_REAL\"|N8N_POSTGRES_PASSWORD=\"${DETECTED_POSTGRES_PASS}\"|" /opt/n8n-backup/config.env
     fi
 fi
 

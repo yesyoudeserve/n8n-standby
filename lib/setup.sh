@@ -244,22 +244,12 @@ ask_all_credentials() {
 
     echo -e "${GREEN}✓ B2 configurado${NC}"
 
-    # Storage para config
-    echo ""
-    echo -e "${BLUE}Storage para salvar configurações:${NC}"
-    echo "1) Oracle"
-    echo "2) B2"
-    echo -n "> [1]: "
-    read STORAGE_CHOICE
-    STORAGE_CHOICE=${STORAGE_CHOICE:-1}
-
-    if [ "$STORAGE_CHOICE" = "2" ]; then
-        CONFIG_STORAGE_TYPE="b2"
-        CONFIG_BUCKET="$B2_CONFIG_BUCKET"
-    else
-        CONFIG_STORAGE_TYPE="oracle"
-        CONFIG_BUCKET="$ORACLE_CONFIG_BUCKET"
-    fi
+    # Storage para config (REMOVIDO - agora salva em ambos)
+    # Sempre salva em Oracle E B2 para redundância
+    CONFIG_STORAGE_TYPE="both"
+    CONFIG_BUCKET="both"
+    
+    echo -e "${GREEN}✓ Configurações serão salvas em AMBOS os storages (redundância)${NC}"
 
     # Discord (opcional)
     echo ""
@@ -371,20 +361,44 @@ EOF
 }
 
 upload_encrypted_config() {
-    log_info "Enviando para ${CONFIG_STORAGE_TYPE}..."
+    log_info "📤 Enviando para storages (redundância)..."
 
-    if [ "$CONFIG_STORAGE_TYPE" = "oracle" ]; then
-        rclone copy "$ENCRYPTED_CONFIG_FILE" "oracle:${CONFIG_BUCKET}/" --quiet && \
-            log_success "Enviado para Oracle"
-    elif [ "$CONFIG_STORAGE_TYPE" = "b2" ]; then
+    local uploaded_count=0
+
+    # Upload para Oracle
+    if [ "$ORACLE_ENABLED" = "true" ] && [ -n "$ORACLE_ACCESS_KEY" ]; then
+        if rclone copy "$ENCRYPTED_CONFIG_FILE" "oracle:${ORACLE_CONFIG_BUCKET}/" --quiet 2>/dev/null; then
+            log_success "✓ Oracle"
+            uploaded_count=$((uploaded_count + 1))
+        else
+            log_warning "✗ Oracle falhou"
+        fi
+    fi
+
+    # Upload para B2
+    if [ "$B2_ENABLED" = "true" ] && [ -n "$B2_ACCOUNT_ID" ]; then
         local b2_remote="b2"
         [ "$B2_USE_SEPARATE_KEYS" = "true" ] && b2_remote="b2-config"
-        rclone copy "$ENCRYPTED_CONFIG_FILE" "${b2_remote}:${CONFIG_BUCKET}/" --quiet && \
-            log_success "Enviado para B2"
+        
+        if rclone copy "$ENCRYPTED_CONFIG_FILE" "${b2_remote}:${B2_CONFIG_BUCKET}/" --quiet 2>/dev/null; then
+            log_success "✓ B2 (offsite)"
+            uploaded_count=$((uploaded_count + 1))
+        else
+            log_warning "✗ B2 falhou"
+        fi
+    fi
+
+    if [ $uploaded_count -eq 0 ]; then
+        log_error "❌ Nenhum storage funcionou!"
+        return 1
+    elif [ $uploaded_count -eq 1 ]; then
+        log_warning "⚠️  Apenas 1 storage funcionou (sem redundância)"
+    else
+        log_success "✓ Configuração salva em $uploaded_count storages (redundante)"
     fi
 }
 
-# Carregar config do cloud
+# Carregar config do cloud (tenta ambos os storages)
 load_encrypted_config() {
     echo ""
     echo -e "${BLUE}🔑 Digite sua senha mestra:${NC}"
@@ -394,33 +408,49 @@ load_encrypted_config() {
 
     [ -z "$MASTER_PASSWORD" ] && return 1
 
-    log_info "📥 Tentando carregar configuração..."
+    log_info "📥 Buscando configuração..."
 
-    if load_metadata_from_supabase "$MASTER_PASSWORD"; then
-        # Baixar config
-        if [ "$CONFIG_STORAGE_TYPE" = "oracle" ]; then
-            rclone copy "oracle:${CONFIG_BUCKET}/config.enc" "${SCRIPT_DIR}/" --quiet
-        else
-            rclone copy "b2:${CONFIG_BUCKET}/config.enc" "${SCRIPT_DIR}/" --quiet
+    # Tentar baixar de qualquer storage disponível
+    local found=false
+    
+    # Tentar Oracle primeiro
+    if rclone ls "oracle:" > /dev/null 2>&1; then
+        if rclone copy "oracle:n8n-config/config.enc" "${SCRIPT_DIR}/" --quiet 2>/dev/null; then
+            log_info "Encontrado no Oracle"
+            found=true
         fi
+    fi
+    
+    # Se não achou, tentar B2
+    if [ "$found" = false ] && rclone ls "b2:" > /dev/null 2>&1; then
+        if rclone copy "b2:n8n-config-offsite/config.enc" "${SCRIPT_DIR}/" --quiet 2>/dev/null; then
+            log_info "Encontrado no B2"
+            found=true
+        fi
+    fi
 
-        if [ -f "$ENCRYPTED_CONFIG_FILE" ]; then
-            local temp_decrypted="${SCRIPT_DIR}/temp_decrypted.env"
-            openssl enc -d -aes-256-cbc -salt -pbkdf2 \
-                -pass pass:"$MASTER_PASSWORD" \
-                -in "$ENCRYPTED_CONFIG_FILE" \
-                -out "$temp_decrypted" 2>/dev/null
+    if [ "$found" = false ]; then
+        log_warning "Config não encontrada nos storages"
+        return 1
+    fi
 
-            if [ $? -eq 0 ]; then
-                source "$temp_decrypted"
-                BACKUP_MASTER_PASSWORD="$MASTER_PASSWORD"
-                rm "$temp_decrypted"
-                echo -e "${GREEN}✓ Configuração carregada do cloud!${NC}"
-                return 0
-            else
-                echo -e "${RED}❌ Senha incorreta!${NC}"
-                rm "$temp_decrypted" 2>/dev/null
-            fi
+    # Descriptografar
+    if [ -f "$ENCRYPTED_CONFIG_FILE" ]; then
+        local temp_decrypted="${SCRIPT_DIR}/temp_decrypted.env"
+        openssl enc -d -aes-256-cbc -salt -pbkdf2 \
+            -pass pass:"$MASTER_PASSWORD" \
+            -in "$ENCRYPTED_CONFIG_FILE" \
+            -out "$temp_decrypted" 2>/dev/null
+
+        if [ $? -eq 0 ]; then
+            source "$temp_decrypted"
+            BACKUP_MASTER_PASSWORD="$MASTER_PASSWORD"
+            rm "$temp_decrypted"
+            echo -e "${GREEN}✓ Configuração carregada do cloud!${NC}"
+            return 0
+        else
+            echo -e "${RED}❌ Senha incorreta!${NC}"
+            rm "$temp_decrypted" 2>/dev/null
         fi
     fi
     
@@ -496,11 +526,168 @@ interactive_setup() {
     echo "   sudo ./n8n-backup.sh backup"
 }
 
-main() {
-    case "${1:-interactive}" in
-        interactive) interactive_setup ;;
-        *) echo "Uso: $0 interactive"; exit 1 ;;
-    esac
+# Modo de edição - permite alterar configurações específicas
+edit_mode() {
+    echo ""
+    echo -e "${BLUE}🔧 Modo de Edição${NC}"
+    echo -e "${BLUE}=================${NC}"
+    
+    # Tentar carregar configuração atual
+    if ! load_encrypted_config; then
+        echo -e "${RED}❌ Não foi possível carregar configuração${NC}"
+        echo "Execute primeiro: ./lib/setup.sh interactive"
+        return 1
+    fi
+    
+    echo ""
+    echo -e "${GREEN}✓ Configuração carregada${NC}"
+    echo ""
+    echo -e "${CYAN}Valores atuais:${NC}"
+    echo "1)  N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:0:10}...${N8N_ENCRYPTION_KEY: -10}"
+    echo "2)  N8N_POSTGRES_PASSWORD: ${N8N_POSTGRES_PASSWORD:0:4}***"
+    echo "3)  ORACLE_NAMESPACE: $ORACLE_NAMESPACE"
+    echo "4)  ORACLE_REGION: $ORACLE_REGION"
+    echo "5)  ORACLE_ACCESS_KEY: ${ORACLE_ACCESS_KEY:0:8}..."
+    echo "6)  ORACLE_SECRET_KEY: ${ORACLE_SECRET_KEY:0:4}***${ORACLE_SECRET_KEY: -4}"
+    echo "7)  ORACLE_BUCKET: $ORACLE_BUCKET"
+    echo "8)  ORACLE_CONFIG_BUCKET: $ORACLE_CONFIG_BUCKET"
+    echo "9)  B2_ACCOUNT_ID: $B2_ACCOUNT_ID"
+    echo "10) B2_APPLICATION_KEY: ${B2_APPLICATION_KEY:0:4}***"
+    echo "11) B2_USE_SEPARATE_KEYS: $B2_USE_SEPARATE_KEYS"
+    echo "12) B2_BUCKET: $B2_BUCKET"
+    echo "13) B2_CONFIG_BUCKET: $B2_CONFIG_BUCKET"
+    echo "14) NOTIFY_WEBHOOK: ${NOTIFY_WEBHOOK:-<vazio>}"
+    echo "15) CONFIG_STORAGE_TYPE: $CONFIG_STORAGE_TYPE"
+    echo ""
+    echo "0)  Salvar alterações e sair"
+    echo ""
+    
+    while true; do
+        echo -e "${YELLOW}Qual campo deseja editar? (0 para sair)${NC}"
+        echo -n "> "
+        read choice
+        
+        case $choice in
+            0)
+                echo ""
+                echo -e "${YELLOW}Salvando alterações...${NC}"
+                apply_config_to_env
+                
+                log_info "Regenerando rclone..."
+                source "${SCRIPT_DIR}/lib/generate-rclone.sh"
+                generate_rclone_config
+                
+                save_encrypted_config
+                save_metadata_to_supabase
+                
+                echo -e "${GREEN}✓ Configuração atualizada!${NC}"
+                break
+                ;;
+            1)
+                echo -e "${YELLOW}Novo N8N_ENCRYPTION_KEY:${NC}"
+                echo -n "> "
+                read N8N_ENCRYPTION_KEY
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            2)
+                echo -e "${YELLOW}Novo N8N_POSTGRES_PASSWORD:${NC}"
+                echo -n "> "
+                read -s N8N_POSTGRES_PASSWORD
+                echo ""
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            3)
+                echo -e "${YELLOW}Novo ORACLE_NAMESPACE:${NC}"
+                echo -n "> "
+                read ORACLE_NAMESPACE
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            4)
+                echo -e "${YELLOW}Novo ORACLE_REGION:${NC}"
+                echo -n "> "
+                read ORACLE_REGION
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            5)
+                echo -e "${YELLOW}Novo ORACLE_ACCESS_KEY:${NC}"
+                echo -n "> "
+                read ORACLE_ACCESS_KEY
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            6)
+                echo -e "${YELLOW}Novo ORACLE_SECRET_KEY:${NC}"
+                echo -n "> "
+                read -s ORACLE_SECRET_KEY
+                echo ""
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            7)
+                echo -e "${YELLOW}Novo ORACLE_BUCKET:${NC}"
+                echo -n "> "
+                read ORACLE_BUCKET
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            8)
+                echo -e "${YELLOW}Novo ORACLE_CONFIG_BUCKET:${NC}"
+                echo -n "> "
+                read ORACLE_CONFIG_BUCKET
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            9)
+                echo -e "${YELLOW}Novo B2_ACCOUNT_ID:${NC}"
+                echo -n "> "
+                read B2_ACCOUNT_ID
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            10)
+                echo -e "${YELLOW}Novo B2_APPLICATION_KEY:${NC}"
+                echo -n "> "
+                read -s B2_APPLICATION_KEY
+                echo ""
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            11)
+                echo -e "${YELLOW}B2_USE_SEPARATE_KEYS (true/false):${NC}"
+                echo -n "> "
+                read B2_USE_SEPARATE_KEYS
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            12)
+                echo -e "${YELLOW}Novo B2_BUCKET:${NC}"
+                echo -n "> "
+                read B2_BUCKET
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            13)
+                echo -e "${YELLOW}Novo B2_CONFIG_BUCKET:${NC}"
+                echo -n "> "
+                read B2_CONFIG_BUCKET
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            14)
+                echo -e "${YELLOW}Novo NOTIFY_WEBHOOK:${NC}"
+                echo -n "> "
+                read NOTIFY_WEBHOOK
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            15)
+                echo -e "${YELLOW}Novo CONFIG_STORAGE_TYPE (oracle/b2):${NC}"
+                echo -n "> "
+                read CONFIG_STORAGE_TYPE
+                if [ "$CONFIG_STORAGE_TYPE" = "oracle" ]; then
+                    CONFIG_BUCKET="$ORACLE_CONFIG_BUCKET"
+                else
+                    CONFIG_BUCKET="$B2_CONFIG_BUCKET"
+                fi
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            *)
+                echo -e "${RED}❌ Opção inválida${NC}"
+                ;;
+        esac
+        
+        echo ""
+    done
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
