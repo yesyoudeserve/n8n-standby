@@ -14,7 +14,7 @@ generate_rclone_config() {
     # Criar diretório rclone para usuário atual
     mkdir -p ~/.config/rclone
 
-    # Gerar configuração
+    # Gerar configuração base
     cat > ~/.config/rclone/rclone.conf << EOF
 # ============================================
 # Configuração Rclone - Gerada automaticamente
@@ -30,12 +30,41 @@ secret_access_key = ${ORACLE_SECRET_KEY}
 region = ${ORACLE_REGION}
 acl = private
 
+EOF
+
+    # B2 - Verificar se usa chaves separadas
+    if [ "$B2_USE_SEPARATE_KEYS" = true ]; then
+        log_info "Configurando B2 com chaves separadas por bucket..."
+        
+        # Remote para bucket de dados
+        cat >> ~/.config/rclone/rclone.conf << EOF
+[b2]
+type = b2
+account = ${B2_ACCOUNT_ID}
+key = ${B2_DATA_KEY}
+hard_delete = false
+
+[b2-config]
+type = b2
+account = ${B2_ACCOUNT_ID}
+key = ${B2_CONFIG_KEY}
+hard_delete = false
+EOF
+        
+        log_warning "⚠️  B2 configurado com remotes separados:"
+        log_warning "   - 'b2' para ${B2_BUCKET}"
+        log_warning "   - 'b2-config' para ${B2_CONFIG_BUCKET}"
+        
+    else
+        # Uma chave para tudo
+        cat >> ~/.config/rclone/rclone.conf << EOF
 [b2]
 type = b2
 account = ${B2_ACCOUNT_ID}
 key = ${B2_APPLICATION_KEY}
 hard_delete = false
 EOF
+    fi
 
     chmod 600 ~/.config/rclone/rclone.conf
     
@@ -68,6 +97,15 @@ EOF
         else
             log_warning "✗ B2 falhou (usuário) - verificar credenciais"
         fi
+        
+        # Testar remote separado se existir
+        if [ "$B2_USE_SEPARATE_KEYS" = true ]; then
+            if rclone lsd b2-config: > /dev/null 2>&1; then
+                log_success "✓ B2-Config OK (usuário)"
+            else
+                log_warning "✗ B2-Config falhou (usuário) - verificar credenciais"
+            fi
+        fi
     fi
     
     # Testar conexões (como root)
@@ -87,6 +125,15 @@ EOF
             log_success "✓ B2 OK (root)"
         else
             log_warning "✗ B2 falhou (root) - verificar credenciais"
+        fi
+        
+        # Testar remote separado se existir
+        if [ "$B2_USE_SEPARATE_KEYS" = true ]; then
+            if sudo rclone lsd b2-config: > /dev/null 2>&1; then
+                log_success "✓ B2-Config OK (root)"
+            else
+                log_warning "✗ B2-Config falhou (root) - verificar credenciais"
+            fi
         fi
     fi
 }

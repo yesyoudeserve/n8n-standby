@@ -134,70 +134,156 @@ ask_credentials() {
     echo ""
     echo -e "${BLUE}Oracle Object Storage (S3-compatible):${NC}"
     
-    if [ -z "$ORACLE_NAMESPACE" ] || [ "$ORACLE_NAMESPACE" = "ALTERAR_COM_SEU_NAMESPACE_REAL" ]; then
+    # Namespace
+    while [ -z "$ORACLE_NAMESPACE" ] || [ "$ORACLE_NAMESPACE" = "ALTERAR_COM_SEU_NAMESPACE_REAL" ]; do
         echo -e "${YELLOW}ORACLE_NAMESPACE (ex: axqwerty12345):${NC}"
         echo -n "> "
         read ORACLE_NAMESPACE
-    fi
+        if [ -z "$ORACLE_NAMESPACE" ]; then
+            echo -e "${RED}❌ Namespace não pode ser vazio!${NC}"
+        fi
+    done
 
-    if [ -z "$ORACLE_REGION" ] || [ "$ORACLE_REGION" = "eu-madrid-1" ]; then
+    # Region
+    while [ -z "$ORACLE_REGION" ]; do
         echo -e "${YELLOW}ORACLE_REGION (ex: eu-madrid-1):${NC}"
         echo -n "> "
         read ORACLE_REGION
-    fi
+        if [ -z "$ORACLE_REGION" ]; then
+            echo -e "${RED}❌ Region não pode ser vazia!${NC}"
+        fi
+    done
 
-    if [ -z "$ORACLE_ACCESS_KEY" ]; then
+    # Access Key
+    while [ -z "$ORACLE_ACCESS_KEY" ]; do
         echo -e "${YELLOW}ORACLE_ACCESS_KEY (Customer Secret Key - Access Key):${NC}"
         echo -n "> "
         read ORACLE_ACCESS_KEY
-    fi
+        if [ -z "$ORACLE_ACCESS_KEY" ]; then
+            echo -e "${RED}❌ Access Key não pode ser vazia!${NC}"
+        fi
+    done
 
-    if [ -z "$ORACLE_SECRET_KEY" ]; then
+    # Secret Key
+    while [ -z "$ORACLE_SECRET_KEY" ]; do
         echo -e "${YELLOW}ORACLE_SECRET_KEY (Customer Secret Key - Secret):${NC}"
         echo -n "> "
         read -s ORACLE_SECRET_KEY
         echo ""
-    fi
+        if [ -z "$ORACLE_SECRET_KEY" ]; then
+            echo -e "${RED}❌ Secret Key não pode ser vazia!${NC}"
+        fi
+    done
 
-    # Bucket de configuração Oracle
-    if [ -z "$ORACLE_CONFIG_BUCKET" ]; then
-        echo -e "${YELLOW}ORACLE_CONFIG_BUCKET (bucket dedicado para configurações):${NC}"
-        echo -n "> "
-        read ORACLE_CONFIG_BUCKET
-    fi
-    
     # Bucket de dados Oracle
-    if [ -z "$ORACLE_BUCKET" ]; then
-        echo -e "${YELLOW}ORACLE_BUCKET (bucket para backups):${NC}"
+    while [ -z "$ORACLE_BUCKET" ]; do
+        echo -e "${YELLOW}ORACLE_BUCKET (bucket para backups de dados):${NC}"
         echo -n "> "
-        read ORACLE_BUCKET
-    fi
-    
-    echo -e "${GREEN}✓ Oracle credentials configuradas${NC}"
+        rea
 
     # B2 Credentials
     echo ""
     echo -e "${BLUE}Backblaze B2:${NC}"
+    echo -e "${YELLOW}⚠️  Importante: Se seus buckets B2 usam Application Keys separadas,${NC}"
+    echo -e "${YELLOW}   você precisará configurar manualmente o rclone depois.${NC}"
+    echo ""
     
-    if [ -z "$B2_ACCOUNT_ID" ] || [ "$B2_ACCOUNT_ID" = "ALTERAR_COM_SEU_ACCOUNT_ID_REAL" ]; then
+    # Account ID
+    while [ -z "$B2_ACCOUNT_ID" ] || [ "$B2_ACCOUNT_ID" = "ALTERAR_COM_SEU_ACCOUNT_ID_REAL" ]; do
         echo -e "${YELLOW}B2_ACCOUNT_ID:${NC}"
         echo -n "> "
         read B2_ACCOUNT_ID
-    fi
+        if [ -z "$B2_ACCOUNT_ID" ]; then
+            echo -e "${RED}❌ Account ID não pode ser vazio!${NC}"
+        fi
+    done
 
-    if [ -z "$B2_APPLICATION_KEY" ] || [ "$B2_APPLICATION_KEY" = "ALTERAR_COM_SUA_APP_KEY_REAL" ]; then
-        echo -e "${YELLOW}B2_APPLICATION_KEY:${NC}"
+    # Perguntar se tem chaves separadas
+    echo ""
+    echo -e "${YELLOW}Suas Application Keys B2 são específicas por bucket?${NC}"
+    echo "1) Não - Tenho uma Master Application Key (acessa todos os buckets)"
+    echo "2) Sim - Tenho Application Keys diferentes para cada bucket"
+    echo -n "> Opção (1 ou 2): "
+    read B2_KEY_TYPE
+
+    case $B2_KEY_TYPE in
+        1)
+            # Uma chave para tudo
+            while [ -z "$B2_APPLICATION_KEY" ] || [ "$B2_APPLICATION_KEY" = "ALTERAR_COM_SUA_APP_KEY_REAL" ]; do
+                echo -e "${YELLOW}B2_APPLICATION_KEY (Master Key):${NC}"
+                echo -n "> "
+                read -s B2_APPLICATION_KEY
+                echo ""
+                if [ -z "$B2_APPLICATION_KEY" ]; then
+                    echo -e "${RED}❌ Application Key não pode ser vazia!${NC}"
+                fi
+            done
+            B2_USE_SEPARATE_KEYS=false
+            ;;
+        2)
+            # Chaves separadas
+            echo ""
+            echo -e "${BLUE}Application Key para bucket de DADOS:${NC}"
+            while [ -z "$B2_DATA_KEY" ]; do
+                echo -e "${YELLOW}B2_DATA_KEY (para backups):${NC}"
+                echo -n "> "
+                read -s B2_DATA_KEY
+                echo ""
+                if [ -z "$B2_DATA_KEY" ]; then
+                    echo -e "${RED}❌ Data Key não pode ser vazia!${NC}"
+                fi
+            done
+
+            echo ""
+            echo -e "${BLUE}Application Key para bucket de CONFIGURAÇÕES:${NC}"
+            while [ -z "$B2_CONFIG_KEY" ]; do
+                echo -e "${YELLOW}B2_CONFIG_KEY (para configurações):${NC}"
+                echo -n "> "
+                read -s B2_CONFIG_KEY
+                echo ""
+                if [ -z "$B2_CONFIG_KEY" ]; then
+                    echo -e "${RED}❌ Config Key não pode ser vazia!${NC}"
+                fi
+            done
+            
+            B2_USE_SEPARATE_KEYS=true
+            ;;
+        *)
+            echo -e "${YELLOW}⚠ Opção inválida. Assumindo Master Key.${NC}"
+            while [ -z "$B2_APPLICATION_KEY" ]; do
+                echo -e "${YELLOW}B2_APPLICATION_KEY:${NC}"
+                echo -n "> "
+                read -s B2_APPLICATION_KEY
+                echo ""
+            done
+            B2_USE_SEPARATE_KEYS=false
+            ;;
+    esac
+
+    echo ""
+    echo -e "${BLUE}B2 Buckets:${NC}"
+
+    # Bucket de dados B2
+    while [ -z "$B2_BUCKET" ]; do
+        echo -e "${YELLOW}B2_BUCKET (bucket para backups de DADOS - ex: n8n-backups-offsite):${NC}"
         echo -n "> "
-        read B2_APPLICATION_KEY
-    fi
+        read B2_BUCKET
+        if [ -z "$B2_BUCKET" ]; then
+            echo -e "${RED}❌ Bucket de dados não pode ser vazio!${NC}"
+        fi
+    done
 
     # Bucket de configuração B2
-    if [ -z "$B2_CONFIG_BUCKET" ]; then
-        echo -e "${YELLOW}B2_CONFIG_BUCKET (bucket dedicado para configurações):${NC}"
+    while [ -z "$B2_CONFIG_BUCKET" ]; do
+        echo -e "${YELLOW}B2_CONFIG_BUCKET (bucket para CONFIGURAÇÕES - ex: n8n-config-offsite):${NC}"
         echo -n "> "
         read B2_CONFIG_BUCKET
-        echo -e "${GREEN}✓ B2 credentials configuradas${NC}"
-    fi
+        if [ -z "$B2_CONFIG_BUCKET" ]; then
+            echo -e "${RED}❌ Bucket de config não pode ser vazio!${NC}"
+        fi
+    done
+    
+    echo -e "${GREEN}✓ B2 credentials configuradas${NC}"
 
     # Escolher storage para configurações
     echo ""
@@ -330,7 +416,10 @@ ORACLE_SECRET_KEY="$ORACLE_SECRET_KEY"
 ORACLE_CONFIG_BUCKET="$ORACLE_CONFIG_BUCKET"
 ORACLE_BUCKET="$ORACLE_BUCKET"
 B2_ACCOUNT_ID="$B2_ACCOUNT_ID"
-B2_APPLICATION_KEY="$B2_APPLICATION_KEY"
+B2_APPLICATION_KEY="${B2_APPLICATION_KEY:-}"
+B2_USE_SEPARATE_KEYS="${B2_USE_SEPARATE_KEYS:-false}"
+B2_DATA_KEY="${B2_DATA_KEY:-}"
+B2_CONFIG_KEY="${B2_CONFIG_KEY:-}"
 B2_CONFIG_BUCKET="$B2_CONFIG_BUCKET"
 B2_BUCKET="$B2_BUCKET"
 NOTIFY_WEBHOOK="$NOTIFY_WEBHOOK"
@@ -383,8 +472,15 @@ upload_encrypted_config() {
             log_error "Oracle rclone não configurado! Execute: rclone config"
         fi
     elif [ "$CONFIG_STORAGE_TYPE" = "b2" ]; then
-        if rclone ls "b2:" > /dev/null 2>&1; then
-            rclone copy "$ENCRYPTED_CONFIG_FILE" "b2:${CONFIG_BUCKET}/" --quiet
+        # Verificar se usa chaves separadas
+        local b2_remote="b2"
+        if [ "$B2_USE_SEPARATE_KEYS" = true ]; then
+            b2_remote="b2-config"
+            log_info "Usando remote 'b2-config' para bucket de configurações"
+        fi
+        
+        if rclone ls "${b2_remote}:" > /dev/null 2>&1; then
+            rclone copy "$ENCRYPTED_CONFIG_FILE" "${b2_remote}:${CONFIG_BUCKET}/" --quiet
             if [ $? -eq 0 ]; then
                 log_success "Configuração enviada para B2"
             else
