@@ -429,6 +429,10 @@ load_encrypted_config() {
         fi
     fi
 
+    # DEBUG: Verificar se arquivo foi baixado
+    echo "DEBUG: Verificando se arquivo foi baixado..."
+    ls -la "${SCRIPT_DIR}/config.enc" 2>/dev/null || echo "DEBUG: Arquivo config.enc não existe no diretório"
+
     if [ "$found" = false ]; then
         log_warning "Config não encontrada nos storages"
         return 1
