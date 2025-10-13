@@ -15,6 +15,9 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/logger.sh"
 
+# Carregar funções de segurança
+source "${SCRIPT_DIR}/lib/security.sh"
+
 # Arquivo de configuração criptografada
 ENCRYPTED_CONFIG_FILE="${SCRIPT_DIR}/config.enc"
 

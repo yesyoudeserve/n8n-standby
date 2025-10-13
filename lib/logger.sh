@@ -16,10 +16,13 @@ log() {
     shift
     local message="$@"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
+
+    # Definir LOG_FILE se não estiver definido
+    LOG_FILE="${LOG_FILE:-/opt/n8n-backup/logs/backup.log}"
+
     # Escrever no arquivo de log
     echo "[${timestamp}] [${level}] ${message}" >> "${LOG_FILE}"
-    
+
     # Exibir no terminal com cor
     case $level in
         INFO)
