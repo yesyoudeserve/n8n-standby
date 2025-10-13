@@ -20,47 +20,37 @@ source "${SCRIPT_DIR}/lib/logger.sh"
 # Arquivo de configuração criptografada
 ENCRYPTED_CONFIG_FILE="${SCRIPT_DIR}/config.enc"
 
-# Função auxiliar para pedir input com valor padrão
-ask_with_default() {
+# Função auxiliar simplificada para pedir input
+ask_input() {
     local prompt=$1
-    local default=$2
+    local current_value=$2
     local secret=${3:-false}
     local result=""
     
-    if [ -n "$default" ] && [ "$default" != "ALTERAR_COM_SUA_CHAVE_ENCRYPTION_REAL" ] && [ "$default" != "ALTERAR_COM_SUA_SENHA_POSTGRES_REAL" ] && [[ ! "$default" =~ ^ALTERAR_ ]]; then
-        # Mostrar valor atual (mascarado se for secret)
+    # Verificar se tem valor válido atual
+    if [ -n "$current_value" ] && [[ ! "$current_value" =~ ^ALTERAR_ ]]; then
+        # Tem valor válido - mostrar e permitir confirmar
         if [ "$secret" = true ]; then
-            local masked="${default:0:4}***${default: -4}"
-            echo -e "${YELLOW}${prompt}${NC}"
-            echo -e "${CYAN}  [Atual: ${masked}] (pressione ENTER para manter)${NC}"
+            local masked="${current_value:0:4}***${current_value: -4}"
+            echo -e "${CYAN}[Atual: ${masked}] (ENTER para manter)${NC}"
         else
-            echo -e "${YELLOW}${prompt}${NC}"
-            echo -e "${CYAN}  [Atual: ${default}] (pressione ENTER para manter)${NC}"
+            echo -e "${CYAN}[Atual: ${current_value}] (ENTER para manter)${NC}"
         fi
-        echo -n "> "
-        
-        if [ "$secret" = true ]; then
-            read -s result
-            echo ""
-        else
-            read result
-        fi
-        
-        # Se vazio, usar padrão
-        if [ -z "$result" ]; then
-            result="$default"
-        fi
+    fi
+    
+    echo -e "${YELLOW}${prompt}${NC}"
+    echo -n "> "
+    
+    if [ "$secret" = true ]; then
+        read -s result
+        echo ""
     else
-        # Não tem valor padrão, pedir normalmente
-        echo -e "${YELLOW}${prompt}${NC}"
-        echo -n "> "
-        
-        if [ "$secret" = true ]; then
-            read -s result
-            echo ""
-        else
-            read result
-        fi
+        read result
+    fi
+    
+    # Se vazio e tem valor atual, usar atual
+    if [ -z "$result" ] && [ -n "$current_value" ] && [[ ! "$current_value" =~ ^ALTERAR_ ]]; then
+        result="$current_value"
     fi
     
     echo "$result"
@@ -143,19 +133,19 @@ ask_credentials() {
 
     # N8N Encryption Key
     echo ""
-    N8N_ENCRYPTION_KEY=$(ask_with_default "N8N_ENCRYPTION_KEY (encontre no EasyPanel > Settings > Encryption):" "$N8N_ENCRYPTION_KEY" false)
+    N8N_ENCRYPTION_KEY=$(ask_input "N8N_ENCRYPTION_KEY (EasyPanel > Settings > Encryption):" "${N8N_ENCRYPTION_KEY:-}" false)
     while [ -z "$N8N_ENCRYPTION_KEY" ]; do
         echo -e "${RED}❌ Encryption key não pode ser vazia!${NC}"
-        N8N_ENCRYPTION_KEY=$(ask_with_default "N8N_ENCRYPTION_KEY:" "" false)
+        N8N_ENCRYPTION_KEY=$(ask_input "N8N_ENCRYPTION_KEY:" "" false)
     done
     echo -e "${GREEN}✓ Encryption key configurada${NC}"
 
     # PostgreSQL Password
     echo ""
-    N8N_POSTGRES_PASSWORD=$(ask_with_default "N8N_POSTGRES_PASSWORD (senha do banco PostgreSQL):" "$N8N_POSTGRES_PASSWORD" false)
+    N8N_POSTGRES_PASSWORD=$(ask_input "N8N_POSTGRES_PASSWORD (senha do PostgreSQL):" "${N8N_POSTGRES_PASSWORD:-}" false)
     while [ -z "$N8N_POSTGRES_PASSWORD" ]; do
         echo -e "${RED}❌ Senha PostgreSQL não pode ser vazia!${NC}"
-        N8N_POSTGRES_PASSWORD=$(ask_with_default "N8N_POSTGRES_PASSWORD:" "" false)
+        N8N_POSTGRES_PASSWORD=$(ask_input "N8N_POSTGRES_PASSWORD:" "" false)
     done
     echo -e "${GREEN}✓ PostgreSQL password configurada${NC}"
 
@@ -163,43 +153,43 @@ ask_credentials() {
     echo ""
     echo -e "${BLUE}Oracle Object Storage (S3-compatible):${NC}"
     
-    ORACLE_NAMESPACE=$(ask_with_default "ORACLE_NAMESPACE (ex: axqwerty12345):" "${ORACLE_NAMESPACE:-}" false)
+    ORACLE_NAMESPACE=$(ask_input "ORACLE_NAMESPACE (ex: axqwerty12345):" "${ORACLE_NAMESPACE:-}" false)
     while [ -z "$ORACLE_NAMESPACE" ]; do
         echo -e "${RED}❌ Namespace não pode ser vazio!${NC}"
-        ORACLE_NAMESPACE=$(ask_with_default "ORACLE_NAMESPACE:" "" false)
+        ORACLE_NAMESPACE=$(ask_input "ORACLE_NAMESPACE:" "" false)
     done
 
-    ORACLE_REGION=$(ask_with_default "ORACLE_REGION (ex: eu-madrid-1):" "${ORACLE_REGION:-eu-madrid-1}" false)
+    ORACLE_REGION=$(ask_input "ORACLE_REGION (ex: eu-madrid-1):" "${ORACLE_REGION:-eu-madrid-1}" false)
     while [ -z "$ORACLE_REGION" ]; do
         echo -e "${RED}❌ Region não pode ser vazia!${NC}"
-        ORACLE_REGION=$(ask_with_default "ORACLE_REGION:" "eu-madrid-1" false)
+        ORACLE_REGION=$(ask_input "ORACLE_REGION:" "eu-madrid-1" false)
     done
 
-    ORACLE_ACCESS_KEY=$(ask_with_default "ORACLE_ACCESS_KEY (Customer Secret Key - Access Key):" "${ORACLE_ACCESS_KEY:-}" false)
+    ORACLE_ACCESS_KEY=$(ask_input "ORACLE_ACCESS_KEY (Access Key):" "${ORACLE_ACCESS_KEY:-}" false)
     while [ -z "$ORACLE_ACCESS_KEY" ]; do
         echo -e "${RED}❌ Access Key não pode ser vazia!${NC}"
-        ORACLE_ACCESS_KEY=$(ask_with_default "ORACLE_ACCESS_KEY:" "" false)
+        ORACLE_ACCESS_KEY=$(ask_input "ORACLE_ACCESS_KEY:" "" false)
     done
 
-    ORACLE_SECRET_KEY=$(ask_with_default "ORACLE_SECRET_KEY (Customer Secret Key - Secret):" "${ORACLE_SECRET_KEY:-}" true)
+    ORACLE_SECRET_KEY=$(ask_input "ORACLE_SECRET_KEY (Secret Key):" "${ORACLE_SECRET_KEY:-}" true)
     while [ -z "$ORACLE_SECRET_KEY" ]; do
         echo -e "${RED}❌ Secret Key não pode ser vazia!${NC}"
-        ORACLE_SECRET_KEY=$(ask_with_default "ORACLE_SECRET_KEY:" "" true)
+        ORACLE_SECRET_KEY=$(ask_input "ORACLE_SECRET_KEY:" "" true)
     done
 
     echo ""
     echo -e "${BLUE}Oracle Buckets:${NC}"
     
-    ORACLE_BUCKET=$(ask_with_default "ORACLE_BUCKET (bucket para backups de DADOS):" "${ORACLE_BUCKET:-n8n-backups}" false)
+    ORACLE_BUCKET=$(ask_input "ORACLE_BUCKET (dados - ex: n8n-backups):" "${ORACLE_BUCKET:-n8n-backups}" false)
     while [ -z "$ORACLE_BUCKET" ]; do
-        echo -e "${RED}❌ Bucket de dados não pode ser vazio!${NC}"
-        ORACLE_BUCKET=$(ask_with_default "ORACLE_BUCKET:" "n8n-backups" false)
+        echo -e "${RED}❌ Bucket não pode ser vazio!${NC}"
+        ORACLE_BUCKET=$(ask_input "ORACLE_BUCKET:" "n8n-backups" false)
     done
 
-    ORACLE_CONFIG_BUCKET=$(ask_with_default "ORACLE_CONFIG_BUCKET (bucket para CONFIGURAÇÕES):" "${ORACLE_CONFIG_BUCKET:-n8n-config}" false)
+    ORACLE_CONFIG_BUCKET=$(ask_input "ORACLE_CONFIG_BUCKET (config - ex: n8n-config):" "${ORACLE_CONFIG_BUCKET:-n8n-config}" false)
     while [ -z "$ORACLE_CONFIG_BUCKET" ]; do
-        echo -e "${RED}❌ Bucket de config não pode ser vazio!${NC}"
-        ORACLE_CONFIG_BUCKET=$(ask_with_default "ORACLE_CONFIG_BUCKET:" "n8n-config" false)
+        echo -e "${RED}❌ Bucket não pode ser vazio!${NC}"
+        ORACLE_CONFIG_BUCKET=$(ask_input "ORACLE_CONFIG_BUCKET:" "n8n-config" false)
     done
     
     echo -e "${GREEN}✓ Oracle credentials configuradas${NC}"
@@ -208,111 +198,86 @@ ask_credentials() {
     echo ""
     echo -e "${BLUE}Backblaze B2:${NC}"
     
-    B2_ACCOUNT_ID=$(ask_with_default "B2_ACCOUNT_ID:" "${B2_ACCOUNT_ID:-}" false)
+    B2_ACCOUNT_ID=$(ask_input "B2_ACCOUNT_ID:" "${B2_ACCOUNT_ID:-}" false)
     while [ -z "$B2_ACCOUNT_ID" ]; do
         echo -e "${RED}❌ Account ID não pode ser vazio!${NC}"
-        B2_ACCOUNT_ID=$(ask_with_default "B2_ACCOUNT_ID:" "" false)
+        B2_ACCOUNT_ID=$(ask_input "B2_ACCOUNT_ID:" "" false)
     done
 
-    # Perguntar sobre chaves separadas
+    # Chaves B2
     echo ""
-    echo -e "${YELLOW}Suas Application Keys B2 são específicas por bucket?${NC}"
-    echo "1) Não - Tenho uma Master Application Key (acessa todos os buckets)"
-    echo "2) Sim - Tenho Application Keys diferentes para cada bucket"
-    echo -n "> Opção (1 ou 2) [1]: "
+    echo -e "${YELLOW}Application Keys B2 específicas por bucket?${NC}"
+    echo "1) Não - Master Key (acessa tudo)"
+    echo "2) Sim - Chaves separadas"
+    echo -n "> [1]: "
     read B2_KEY_TYPE
     B2_KEY_TYPE=${B2_KEY_TYPE:-1}
 
-    case $B2_KEY_TYPE in
-        1)
-            B2_APPLICATION_KEY=$(ask_with_default "B2_APPLICATION_KEY (Master Key):" "${B2_APPLICATION_KEY:-}" true)
-            while [ -z "$B2_APPLICATION_KEY" ]; do
-                echo -e "${RED}❌ Application Key não pode ser vazia!${NC}"
-                B2_APPLICATION_KEY=$(ask_with_default "B2_APPLICATION_KEY:" "" true)
-            done
-            B2_USE_SEPARATE_KEYS=false
-            B2_DATA_KEY=""
-            B2_CONFIG_KEY=""
-            ;;
-        2)
-            echo ""
-            echo -e "${BLUE}Application Key para bucket de DADOS:${NC}"
-            B2_DATA_KEY=$(ask_with_default "B2_DATA_KEY (para backups):" "${B2_DATA_KEY:-}" true)
-            while [ -z "$B2_DATA_KEY" ]; do
-                echo -e "${RED}❌ Data Key não pode ser vazia!${NC}"
-                B2_DATA_KEY=$(ask_with_default "B2_DATA_KEY:" "" true)
-            done
+    if [ "$B2_KEY_TYPE" = "2" ]; then
+        echo ""
+        B2_DATA_KEY=$(ask_input "B2_DATA_KEY (para dados):" "${B2_DATA_KEY:-}" true)
+        while [ -z "$B2_DATA_KEY" ]; do
+            echo -e "${RED}❌ Data Key não pode ser vazia!${NC}"
+            B2_DATA_KEY=$(ask_input "B2_DATA_KEY:" "" true)
+        done
 
-            echo ""
-            echo -e "${BLUE}Application Key para bucket de CONFIGURAÇÕES:${NC}"
-            B2_CONFIG_KEY=$(ask_with_default "B2_CONFIG_KEY (para configurações):" "${B2_CONFIG_KEY:-}" true)
-            while [ -z "$B2_CONFIG_KEY" ]; do
-                echo -e "${RED}❌ Config Key não pode ser vazia!${NC}"
-                B2_CONFIG_KEY=$(ask_with_default "B2_CONFIG_KEY:" "" true)
-            done
-            
-            B2_USE_SEPARATE_KEYS=true
-            B2_APPLICATION_KEY=""
-            ;;
-        *)
-            echo -e "${YELLOW}⚠ Opção inválida. Assumindo Master Key.${NC}"
-            B2_APPLICATION_KEY=$(ask_with_default "B2_APPLICATION_KEY:" "${B2_APPLICATION_KEY:-}" true)
-            while [ -z "$B2_APPLICATION_KEY" ]; do
-                echo -e "${RED}❌ Application Key não pode ser vazia!${NC}"
-                B2_APPLICATION_KEY=$(ask_with_default "B2_APPLICATION_KEY:" "" true)
-            done
-            B2_USE_SEPARATE_KEYS=false
-            ;;
-    esac
+        B2_CONFIG_KEY=$(ask_input "B2_CONFIG_KEY (para config):" "${B2_CONFIG_KEY:-}" true)
+        while [ -z "$B2_CONFIG_KEY" ]; do
+            echo -e "${RED}❌ Config Key não pode ser vazia!${NC}"
+            B2_CONFIG_KEY=$(ask_input "B2_CONFIG_KEY:" "" true)
+        done
+        
+        B2_USE_SEPARATE_KEYS=true
+        B2_APPLICATION_KEY=""
+    else
+        B2_APPLICATION_KEY=$(ask_input "B2_APPLICATION_KEY (Master):" "${B2_APPLICATION_KEY:-}" true)
+        while [ -z "$B2_APPLICATION_KEY" ]; do
+            echo -e "${RED}❌ Application Key não pode ser vazia!${NC}"
+            B2_APPLICATION_KEY=$(ask_input "B2_APPLICATION_KEY:" "" true)
+        done
+        B2_USE_SEPARATE_KEYS=false
+        B2_DATA_KEY=""
+        B2_CONFIG_KEY=""
+    fi
 
     echo ""
     echo -e "${BLUE}B2 Buckets:${NC}"
 
-    B2_BUCKET=$(ask_with_default "B2_BUCKET (bucket para backups de DADOS):" "${B2_BUCKET:-n8n-backups-offsite}" false)
+    B2_BUCKET=$(ask_input "B2_BUCKET (dados - ex: n8n-backups-offsite):" "${B2_BUCKET:-n8n-backups-offsite}" false)
     while [ -z "$B2_BUCKET" ]; do
-        echo -e "${RED}❌ Bucket de dados não pode ser vazio!${NC}"
-        B2_BUCKET=$(ask_with_default "B2_BUCKET:" "n8n-backups-offsite" false)
+        echo -e "${RED}❌ Bucket não pode ser vazio!${NC}"
+        B2_BUCKET=$(ask_input "B2_BUCKET:" "n8n-backups-offsite" false)
     done
 
-    B2_CONFIG_BUCKET=$(ask_with_default "B2_CONFIG_BUCKET (bucket para CONFIGURAÇÕES):" "${B2_CONFIG_BUCKET:-n8n-config-offsite}" false)
+    B2_CONFIG_BUCKET=$(ask_input "B2_CONFIG_BUCKET (config - ex: n8n-config-offsite):" "${B2_CONFIG_BUCKET:-n8n-config-offsite}" false)
     while [ -z "$B2_CONFIG_BUCKET" ]; do
-        echo -e "${RED}❌ Bucket de config não pode ser vazio!${NC}"
-        B2_CONFIG_BUCKET=$(ask_with_default "B2_CONFIG_BUCKET:" "n8n-config-offsite" false)
+        echo -e "${RED}❌ Bucket não pode ser vazio!${NC}"
+        B2_CONFIG_BUCKET=$(ask_input "B2_CONFIG_BUCKET:" "n8n-config-offsite" false)
     done
     
     echo -e "${GREEN}✓ B2 credentials configuradas${NC}"
 
-    # Escolher storage
+    # Storage para config
     echo ""
-    echo -e "${BLUE}Escolha o storage para salvar as configurações:${NC}"
-    echo "1) Oracle Object Storage"
-    echo "2) Backblaze B2"
-    echo -n "> Opção (1 ou 2) [1]: "
+    echo -e "${BLUE}Storage para configurações:${NC}"
+    echo "1) Oracle"
+    echo "2) B2"
+    echo -n "> [1]: "
     read STORAGE_CHOICE
     STORAGE_CHOICE=${STORAGE_CHOICE:-1}
 
-    case $STORAGE_CHOICE in
-        1)
-            CONFIG_STORAGE_TYPE="oracle"
-            CONFIG_BUCKET="$ORACLE_CONFIG_BUCKET"
-            ;;
-        2)
-            CONFIG_STORAGE_TYPE="b2"
-            CONFIG_BUCKET="$B2_CONFIG_BUCKET"
-            ;;
-        *)
-            echo -e "${YELLOW}⚠ Opção inválida. Usando Oracle por padrão.${NC}"
-            CONFIG_STORAGE_TYPE="oracle"
-            CONFIG_BUCKET="$ORACLE_CONFIG_BUCKET"
-            ;;
-    esac
-
-    # Discord Webhook (opcional)
-    echo ""
-    NOTIFY_WEBHOOK=$(ask_with_default "Discord Webhook (opcional - pressione ENTER para pular):" "${NOTIFY_WEBHOOK:-}" false)
-    if [ -n "$NOTIFY_WEBHOOK" ]; then
-        echo -e "${GREEN}✓ Discord webhook configurado${NC}"
+    if [ "$STORAGE_CHOICE" = "2" ]; then
+        CONFIG_STORAGE_TYPE="b2"
+        CONFIG_BUCKET="$B2_CONFIG_BUCKET"
+    else
+        CONFIG_STORAGE_TYPE="oracle"
+        CONFIG_BUCKET="$ORACLE_CONFIG_BUCKET"
     fi
+
+    # Discord (opcional)
+    echo ""
+    NOTIFY_WEBHOOK=$(ask_input "Discord Webhook (opcional - ENTER para pular):" "${NOTIFY_WEBHOOK:-}" false)
+    [ -n "$NOTIFY_WEBHOOK" ] && echo -e "${GREEN}✓ Discord configurado${NC}"
 }
 
 # [Resto das funções permanecem iguais: query_supabase, generate_backup_key_hash, etc.]
