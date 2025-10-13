@@ -2,7 +2,7 @@
 # ============================================
 # Configuração Automática e Interativa
 # Arquivo: /opt/n8n-backup/lib/setup.sh
-# Versão: 3.0 - Com sugestões de valores padrão
+# Versão: 4.0 - Lógica Master Password
 # ============================================
 
 # Cores
@@ -20,87 +20,42 @@ source "${SCRIPT_DIR}/lib/logger.sh"
 # Arquivo de configuração criptografada
 ENCRYPTED_CONFIG_FILE="${SCRIPT_DIR}/config.enc"
 
-# Função auxiliar simplificada para pedir input
-ask_input() {
-    local prompt=$1
-    local current_value=$2
-    local secret=${3:-false}
-    local result=""
-    
-    # Verificar se tem valor válido atual
-    if [ -n "$current_value" ] && [[ ! "$current_value" =~ ^ALTERAR_ ]]; then
-        # Tem valor válido - mostrar e permitir confirmar
-        if [ "$secret" = true ]; then
-            local masked="${current_value:0:4}***${current_value: -4}"
-            echo -e "${CYAN}[Atual: ${masked}] (ENTER para manter)${NC}"
-        else
-            echo -e "${CYAN}[Atual: ${current_value}] (ENTER para manter)${NC}"
-        fi
-    fi
-    
-    echo -e "${YELLOW}${prompt}${NC}"
-    echo -n "> "
-    
-    if [ "$secret" = true ]; then
-        read -s result
-        echo ""
-    else
-        read result
-    fi
-    
-    # Se vazio e tem valor atual, usar atual
-    if [ -z "$result" ] && [ -n "$current_value" ] && [[ ! "$current_value" =~ ^ALTERAR_ ]]; then
-        result="$current_value"
-    fi
-    
-    echo "$result"
-}
-
 # Função para detectar credenciais automaticamente
 detect_credentials() {
     log_info "🔍 Detectando credenciais automaticamente..."
 
-    # Carregar config.env para ver se já temos credenciais
-    if [ -f "${SCRIPT_DIR}/config.env" ]; then
-        source "${SCRIPT_DIR}/config.env"
-    fi
-
     # Detectar N8N Encryption Key
-    if [ -z "$N8N_ENCRYPTION_KEY" ] || [[ "$N8N_ENCRYPTION_KEY" =~ ^ALTERAR_ ]]; then
-        N8N_CONTAINER=$(sudo docker ps --filter "name=n8n" --format "{{.Names}}" | grep -E "^n8n" | head -1 || echo "")
-        if [ -n "$N8N_CONTAINER" ]; then
-            DETECTED_N8N_KEY=$(sudo docker exec "$N8N_CONTAINER" env 2>/dev/null | grep N8N_ENCRYPTION_KEY | cut -d'=' -f2 | tr -d '\r' || echo "")
-            if [ -n "$DETECTED_N8N_KEY" ]; then
-                N8N_ENCRYPTION_KEY="$DETECTED_N8N_KEY"
-                echo -e "${GREEN}✓ N8N_ENCRYPTION_KEY detectada do container: ${N8N_CONTAINER}${NC}"
-            fi
+    N8N_CONTAINER=$(sudo docker ps --filter "name=n8n" --format "{{.Names}}" | grep -E "^n8n" | head -1 || echo "")
+    if [ -n "$N8N_CONTAINER" ]; then
+        DETECTED_N8N_KEY=$(sudo docker exec "$N8N_CONTAINER" env 2>/dev/null | grep N8N_ENCRYPTION_KEY | cut -d'=' -f2 | tr -d '\r' || echo "")
+        if [ -n "$DETECTED_N8N_KEY" ]; then
+            N8N_ENCRYPTION_KEY="$DETECTED_N8N_KEY"
+            echo -e "${GREEN}✓ N8N_ENCRYPTION_KEY auto-detectada${NC}"
         fi
     fi
 
     # Detectar PostgreSQL Password
-    if [ -z "$N8N_POSTGRES_PASSWORD" ] || [[ "$N8N_POSTGRES_PASSWORD" =~ ^ALTERAR_ ]]; then
-        POSTGRES_CONTAINER=$(sudo docker ps --filter "name=postgres" --format "{{.Names}}" | grep -E "postgres" | head -1 || echo "")
-        if [ -n "$POSTGRES_CONTAINER" ]; then
-            DETECTED_POSTGRES_PASS=$(sudo docker exec "$POSTGRES_CONTAINER" env 2>/dev/null | grep POSTGRES_PASSWORD | cut -d'=' -f2 | tr -d '\r' || echo "")
-            if [ -n "$DETECTED_POSTGRES_PASS" ]; then
-                N8N_POSTGRES_PASSWORD="$DETECTED_POSTGRES_PASS"
-                echo -e "${GREEN}✓ N8N_POSTGRES_PASSWORD detectada do container: ${POSTGRES_CONTAINER}${NC}"
-            fi
+    POSTGRES_CONTAINER=$(sudo docker ps --filter "name=postgres" --format "{{.Names}}" | grep -E "postgres" | head -1 || echo "")
+    if [ -n "$POSTGRES_CONTAINER" ]; then
+        DETECTED_POSTGRES_PASS=$(sudo docker exec "$POSTGRES_CONTAINER" env 2>/dev/null | grep POSTGRES_PASSWORD | cut -d'=' -f2 | tr -d '\r' || echo "")
+        if [ -n "$DETECTED_POSTGRES_PASS" ]; then
+            N8N_POSTGRES_PASSWORD="$DETECTED_POSTGRES_PASS"
+            echo -e "${GREEN}✓ N8N_POSTGRES_PASSWORD auto-detectada${NC}"
         fi
     fi
 }
 
-# Função para perguntar credenciais interativamente
-ask_credentials() {
+# Função para perguntar TODAS as credenciais (primeira instalação)
+ask_all_credentials() {
     echo ""
-    echo -e "${BLUE}🔐 Configuração de Credenciais${NC}"
-    echo -e "${BLUE}================================${NC}"
+    echo -e "${BLUE}🔐 Configuração Completa (Primeira Instalação)${NC}"
+    echo -e "${BLUE}================================================${NC}"
 
-    # Senha mestra (sempre pedir nova)
+    # Senha mestra
     while true; do
         echo ""
-        echo -e "${YELLOW}Digite uma senha mestra forte (mínimo 12 caracteres):${NC}"
-        echo -e "${YELLOW}Esta senha protege todas as suas credenciais!${NC}"
+        echo -e "${YELLOW}Crie uma senha mestra forte (mínimo 12 caracteres):${NC}"
+        echo -e "${CYAN}Esta senha protegerá todas as suas credenciais!${NC}"
         echo -n "> "
         read -s BACKUP_MASTER_PASSWORD
         echo ""
@@ -115,7 +70,6 @@ ask_credentials() {
             continue
         fi
 
-        echo ""
         echo -e "${YELLOW}Confirme a senha mestra:${NC}"
         echo -n "> "
         read -s CONFIRM_PASSWORD
@@ -123,143 +77,176 @@ ask_credentials() {
 
         if [ "$BACKUP_MASTER_PASSWORD" != "$CONFIRM_PASSWORD" ]; then
             echo -e "${RED}❌ As senhas não coincidem!${NC}"
-            BACKUP_MASTER_PASSWORD=""
             continue
         fi
 
-        echo -e "${GREEN}✓ Senha mestra aceita (${#BACKUP_MASTER_PASSWORD} caracteres)${NC}"
+        echo -e "${GREEN}✓ Senha mestra criada (${#BACKUP_MASTER_PASSWORD} caracteres)${NC}"
         break
     done
 
     # N8N Encryption Key
     echo ""
-    N8N_ENCRYPTION_KEY=$(ask_input "N8N_ENCRYPTION_KEY (EasyPanel > Settings > Encryption):" "${N8N_ENCRYPTION_KEY:-}" false)
+    echo -e "${YELLOW}N8N_ENCRYPTION_KEY:${NC}"
+    if [ -n "$N8N_ENCRYPTION_KEY" ]; then
+        echo -e "${CYAN}(Auto-detectada - pressione ENTER para usar)${NC}"
+    fi
+    echo -n "> "
+    read INPUT_KEY
+    if [ -n "$INPUT_KEY" ]; then
+        N8N_ENCRYPTION_KEY="$INPUT_KEY"
+    fi
     while [ -z "$N8N_ENCRYPTION_KEY" ]; do
         echo -e "${RED}❌ Encryption key não pode ser vazia!${NC}"
-        N8N_ENCRYPTION_KEY=$(ask_input "N8N_ENCRYPTION_KEY:" "" false)
+        echo -n "> "
+        read N8N_ENCRYPTION_KEY
     done
-    echo -e "${GREEN}✓ Encryption key configurada${NC}"
+    echo -e "${GREEN}✓ N8N Encryption Key configurada${NC}"
 
     # PostgreSQL Password
     echo ""
-    N8N_POSTGRES_PASSWORD=$(ask_input "N8N_POSTGRES_PASSWORD (senha do PostgreSQL):" "${N8N_POSTGRES_PASSWORD:-}" false)
+    echo -e "${YELLOW}N8N_POSTGRES_PASSWORD:${NC}"
+    if [ -n "$N8N_POSTGRES_PASSWORD" ]; then
+        echo -e "${CYAN}(Auto-detectada - pressione ENTER para usar)${NC}"
+    fi
+    echo -n "> "
+    read INPUT_PASS
+    if [ -n "$INPUT_PASS" ]; then
+        N8N_POSTGRES_PASSWORD="$INPUT_PASS"
+    fi
     while [ -z "$N8N_POSTGRES_PASSWORD" ]; do
-        echo -e "${RED}❌ Senha PostgreSQL não pode ser vazia!${NC}"
-        N8N_POSTGRES_PASSWORD=$(ask_input "N8N_POSTGRES_PASSWORD:" "" false)
+        echo -e "${RED}❌ PostgreSQL password não pode ser vazia!${NC}"
+        echo -n "> "
+        read N8N_POSTGRES_PASSWORD
     done
-    echo -e "${GREEN}✓ PostgreSQL password configurada${NC}"
+    echo -e "${GREEN}✓ PostgreSQL Password configurada${NC}"
 
-    # Oracle Credentials
+    # Oracle
     echo ""
     echo -e "${BLUE}Oracle Object Storage (S3-compatible):${NC}"
     
-    ORACLE_NAMESPACE=$(ask_input "ORACLE_NAMESPACE (ex: axqwerty12345):" "${ORACLE_NAMESPACE:-}" false)
+    echo -e "${YELLOW}ORACLE_NAMESPACE:${NC}"
+    echo -n "> "
+    read ORACLE_NAMESPACE
     while [ -z "$ORACLE_NAMESPACE" ]; do
-        echo -e "${RED}❌ Namespace não pode ser vazio!${NC}"
-        ORACLE_NAMESPACE=$(ask_input "ORACLE_NAMESPACE:" "" false)
+        echo -e "${RED}❌ Não pode ser vazio!${NC}"
+        echo -n "> "
+        read ORACLE_NAMESPACE
     done
 
-    ORACLE_REGION=$(ask_input "ORACLE_REGION (ex: eu-madrid-1):" "${ORACLE_REGION:-eu-madrid-1}" false)
-    while [ -z "$ORACLE_REGION" ]; do
-        echo -e "${RED}❌ Region não pode ser vazia!${NC}"
-        ORACLE_REGION=$(ask_input "ORACLE_REGION:" "eu-madrid-1" false)
-    done
+    echo -e "${YELLOW}ORACLE_REGION (ex: eu-madrid-1):${NC}"
+    echo -n "> "
+    read ORACLE_REGION
+    ORACLE_REGION=${ORACLE_REGION:-eu-madrid-1}
 
-    ORACLE_ACCESS_KEY=$(ask_input "ORACLE_ACCESS_KEY (Access Key):" "${ORACLE_ACCESS_KEY:-}" false)
+    echo -e "${YELLOW}ORACLE_ACCESS_KEY:${NC}"
+    echo -n "> "
+    read ORACLE_ACCESS_KEY
     while [ -z "$ORACLE_ACCESS_KEY" ]; do
-        echo -e "${RED}❌ Access Key não pode ser vazia!${NC}"
-        ORACLE_ACCESS_KEY=$(ask_input "ORACLE_ACCESS_KEY:" "" false)
+        echo -e "${RED}❌ Não pode ser vazio!${NC}"
+        echo -n "> "
+        read ORACLE_ACCESS_KEY
     done
 
-    ORACLE_SECRET_KEY=$(ask_input "ORACLE_SECRET_KEY (Secret Key):" "${ORACLE_SECRET_KEY:-}" true)
-    while [ -z "$ORACLE_SECRET_KEY" ]; do
-        echo -e "${RED}❌ Secret Key não pode ser vazia!${NC}"
-        ORACLE_SECRET_KEY=$(ask_input "ORACLE_SECRET_KEY:" "" true)
-    done
-
+    echo -e "${YELLOW}ORACLE_SECRET_KEY:${NC}"
+    echo -n "> "
+    read -s ORACLE_SECRET_KEY
     echo ""
-    echo -e "${BLUE}Oracle Buckets:${NC}"
-    
-    ORACLE_BUCKET=$(ask_input "ORACLE_BUCKET (dados - ex: n8n-backups):" "${ORACLE_BUCKET:-n8n-backups}" false)
-    while [ -z "$ORACLE_BUCKET" ]; do
-        echo -e "${RED}❌ Bucket não pode ser vazio!${NC}"
-        ORACLE_BUCKET=$(ask_input "ORACLE_BUCKET:" "n8n-backups" false)
+    while [ -z "$ORACLE_SECRET_KEY" ]; do
+        echo -e "${RED}❌ Não pode ser vazio!${NC}"
+        echo -n "> "
+        read -s ORACLE_SECRET_KEY
+        echo ""
     done
 
-    ORACLE_CONFIG_BUCKET=$(ask_input "ORACLE_CONFIG_BUCKET (config - ex: n8n-config):" "${ORACLE_CONFIG_BUCKET:-n8n-config}" false)
-    while [ -z "$ORACLE_CONFIG_BUCKET" ]; do
-        echo -e "${RED}❌ Bucket não pode ser vazio!${NC}"
-        ORACLE_CONFIG_BUCKET=$(ask_input "ORACLE_CONFIG_BUCKET:" "n8n-config" false)
-    done
-    
-    echo -e "${GREEN}✓ Oracle credentials configuradas${NC}"
+    echo -e "${YELLOW}ORACLE_BUCKET (ex: n8n-backups):${NC}"
+    echo -n "> "
+    read ORACLE_BUCKET
+    ORACLE_BUCKET=${ORACLE_BUCKET:-n8n-backups}
 
-    # B2 Credentials
+    echo -e "${YELLOW}ORACLE_CONFIG_BUCKET (ex: n8n-config):${NC}"
+    echo -n "> "
+    read ORACLE_CONFIG_BUCKET
+    ORACLE_CONFIG_BUCKET=${ORACLE_CONFIG_BUCKET:-n8n-config}
+
+    echo -e "${GREEN}✓ Oracle configurado${NC}"
+
+    # B2
     echo ""
     echo -e "${BLUE}Backblaze B2:${NC}"
     
-    B2_ACCOUNT_ID=$(ask_input "B2_ACCOUNT_ID:" "${B2_ACCOUNT_ID:-}" false)
+    echo -e "${YELLOW}B2_ACCOUNT_ID:${NC}"
+    echo -n "> "
+    read B2_ACCOUNT_ID
     while [ -z "$B2_ACCOUNT_ID" ]; do
-        echo -e "${RED}❌ Account ID não pode ser vazio!${NC}"
-        B2_ACCOUNT_ID=$(ask_input "B2_ACCOUNT_ID:" "" false)
+        echo -e "${RED}❌ Não pode ser vazio!${NC}"
+        echo -n "> "
+        read B2_ACCOUNT_ID
     done
 
-    # Chaves B2
     echo ""
-    echo -e "${YELLOW}Application Keys B2 específicas por bucket?${NC}"
-    echo "1) Não - Master Key (acessa tudo)"
+    echo -e "${YELLOW}Chaves B2 específicas por bucket?${NC}"
+    echo "1) Não - Master Key"
     echo "2) Sim - Chaves separadas"
     echo -n "> [1]: "
     read B2_KEY_TYPE
     B2_KEY_TYPE=${B2_KEY_TYPE:-1}
 
     if [ "$B2_KEY_TYPE" = "2" ]; then
+        echo -e "${YELLOW}B2_DATA_KEY (para dados):${NC}"
+        echo -n "> "
+        read -s B2_DATA_KEY
         echo ""
-        B2_DATA_KEY=$(ask_input "B2_DATA_KEY (para dados):" "${B2_DATA_KEY:-}" true)
         while [ -z "$B2_DATA_KEY" ]; do
-            echo -e "${RED}❌ Data Key não pode ser vazia!${NC}"
-            B2_DATA_KEY=$(ask_input "B2_DATA_KEY:" "" true)
+            echo -e "${RED}❌ Não pode ser vazio!${NC}"
+            echo -n "> "
+            read -s B2_DATA_KEY
+            echo ""
         done
 
-        B2_CONFIG_KEY=$(ask_input "B2_CONFIG_KEY (para config):" "${B2_CONFIG_KEY:-}" true)
+        echo -e "${YELLOW}B2_CONFIG_KEY (para config):${NC}"
+        echo -n "> "
+        read -s B2_CONFIG_KEY
+        echo ""
         while [ -z "$B2_CONFIG_KEY" ]; do
-            echo -e "${RED}❌ Config Key não pode ser vazia!${NC}"
-            B2_CONFIG_KEY=$(ask_input "B2_CONFIG_KEY:" "" true)
+            echo -e "${RED}❌ Não pode ser vazio!${NC}"
+            echo -n "> "
+            read -s B2_CONFIG_KEY
+            echo ""
         done
         
         B2_USE_SEPARATE_KEYS=true
         B2_APPLICATION_KEY=""
     else
-        B2_APPLICATION_KEY=$(ask_input "B2_APPLICATION_KEY (Master):" "${B2_APPLICATION_KEY:-}" true)
+        echo -e "${YELLOW}B2_APPLICATION_KEY:${NC}"
+        echo -n "> "
+        read -s B2_APPLICATION_KEY
+        echo ""
         while [ -z "$B2_APPLICATION_KEY" ]; do
-            echo -e "${RED}❌ Application Key não pode ser vazia!${NC}"
-            B2_APPLICATION_KEY=$(ask_input "B2_APPLICATION_KEY:" "" true)
+            echo -e "${RED}❌ Não pode ser vazio!${NC}"
+            echo -n "> "
+            read -s B2_APPLICATION_KEY
+            echo ""
         done
         B2_USE_SEPARATE_KEYS=false
         B2_DATA_KEY=""
         B2_CONFIG_KEY=""
     fi
 
-    echo ""
-    echo -e "${BLUE}B2 Buckets:${NC}"
+    echo -e "${YELLOW}B2_BUCKET (ex: n8n-backups-offsite):${NC}"
+    echo -n "> "
+    read B2_BUCKET
+    B2_BUCKET=${B2_BUCKET:-n8n-backups-offsite}
 
-    B2_BUCKET=$(ask_input "B2_BUCKET (dados - ex: n8n-backups-offsite):" "${B2_BUCKET:-n8n-backups-offsite}" false)
-    while [ -z "$B2_BUCKET" ]; do
-        echo -e "${RED}❌ Bucket não pode ser vazio!${NC}"
-        B2_BUCKET=$(ask_input "B2_BUCKET:" "n8n-backups-offsite" false)
-    done
+    echo -e "${YELLOW}B2_CONFIG_BUCKET (ex: n8n-config-offsite):${NC}"
+    echo -n "> "
+    read B2_CONFIG_BUCKET
+    B2_CONFIG_BUCKET=${B2_CONFIG_BUCKET:-n8n-config-offsite}
 
-    B2_CONFIG_BUCKET=$(ask_input "B2_CONFIG_BUCKET (config - ex: n8n-config-offsite):" "${B2_CONFIG_BUCKET:-n8n-config-offsite}" false)
-    while [ -z "$B2_CONFIG_BUCKET" ]; do
-        echo -e "${RED}❌ Bucket não pode ser vazio!${NC}"
-        B2_CONFIG_BUCKET=$(ask_input "B2_CONFIG_BUCKET:" "n8n-config-offsite" false)
-    done
-    
-    echo -e "${GREEN}✓ B2 credentials configuradas${NC}"
+    echo -e "${GREEN}✓ B2 configurado${NC}"
 
     # Storage para config
     echo ""
-    echo -e "${BLUE}Storage para configurações:${NC}"
+    echo -e "${BLUE}Storage para salvar configurações:${NC}"
     echo "1) Oracle"
     echo "2) B2"
     echo -n "> [1]: "
@@ -276,14 +263,12 @@ ask_credentials() {
 
     # Discord (opcional)
     echo ""
-    NOTIFY_WEBHOOK=$(ask_input "Discord Webhook (opcional - ENTER para pular):" "${NOTIFY_WEBHOOK:-}" false)
-    [ -n "$NOTIFY_WEBHOOK" ] && echo -e "${GREEN}✓ Discord configurado${NC}"
+    echo -e "${YELLOW}Discord Webhook (opcional - ENTER para pular):${NC}"
+    echo -n "> "
+    read NOTIFY_WEBHOOK
 }
 
-# [Resto das funções permanecem iguais: query_supabase, generate_backup_key_hash, etc.]
-# ... (código anterior continua aqui)
-
-# Função para consultar Supabase
+# Funções Supabase
 query_supabase() {
     local action="$1"
     local backup_key_hash="$2"
@@ -307,54 +292,47 @@ query_supabase() {
 }
 
 generate_backup_key_hash() {
-    local master_password="$1"
-    echo -n "$master_password" | sha256sum | awk '{print $1}'
+    echo -n "$1" | sha256sum | awk '{print $1}'
 }
 
 save_metadata_to_supabase() {
-    local master_password="$1"
-    local storage_type="$2"
-    local config_bucket="$3"
-
-    local backup_key_hash=$(generate_backup_key_hash "$master_password")
-
+    local backup_key_hash=$(generate_backup_key_hash "$BACKUP_MASTER_PASSWORD")
     local storage_config=""
-    if [ "$storage_type" = "oracle" ]; then
-        storage_config="{\"bucket\":\"$config_bucket\",\"namespace\":\"$ORACLE_NAMESPACE\"}"
-    elif [ "$storage_type" = "b2" ]; then
-        storage_config="{\"bucket\":\"$config_bucket\"}"
+    
+    if [ "$CONFIG_STORAGE_TYPE" = "oracle" ]; then
+        storage_config="{\"bucket\":\"$CONFIG_BUCKET\",\"namespace\":\"$ORACLE_NAMESPACE\"}"
+    else
+        storage_config="{\"bucket\":\"$CONFIG_BUCKET\"}"
     fi
 
     log_info "Salvando metadados no Supabase..."
-    local response=$(query_supabase "set" "$backup_key_hash" "$storage_type" "$storage_config")
+    local response=$(query_supabase "set" "$backup_key_hash" "$CONFIG_STORAGE_TYPE" "$storage_config")
 
     if echo "$response" | jq -e '.success' > /dev/null 2>&1; then
-        log_success "Metadados salvos no Supabase"
+        log_success "Metadados salvos"
         return 0
     else
-        log_error "Falha ao salvar metadados: $response"
+        log_error "Falha: $response"
         return 1
     fi
 }
 
 load_metadata_from_supabase() {
-    local master_password="$1"
-    local backup_key_hash=$(generate_backup_key_hash "$master_password")
-
-    log_info "Buscando metadados no Supabase..."
+    local backup_key_hash=$(generate_backup_key_hash "$1")
+    
+    log_info "Buscando metadados..."
     local response=$(query_supabase "get" "$backup_key_hash")
 
     if echo "$response" | jq -e '.storageType' > /dev/null 2>&1; then
         CONFIG_STORAGE_TYPE=$(echo "$response" | jq -r '.storageType')
         CONFIG_BUCKET=$(echo "$response" | jq -r '.storageConfig.bucket')
-        log_success "Metadados carregados do Supabase"
         return 0
     else
-        log_info "Metadados não encontrados (primeira instalação)"
         return 1
     fi
 }
 
+# Salvar config criptografada
 save_encrypted_config() {
     log_info "💾 Salvando configuração criptografada..."
 
@@ -370,10 +348,10 @@ ORACLE_SECRET_KEY="$ORACLE_SECRET_KEY"
 ORACLE_CONFIG_BUCKET="$ORACLE_CONFIG_BUCKET"
 ORACLE_BUCKET="$ORACLE_BUCKET"
 B2_ACCOUNT_ID="$B2_ACCOUNT_ID"
-B2_APPLICATION_KEY="${B2_APPLICATION_KEY:-}"
-B2_USE_SEPARATE_KEYS="${B2_USE_SEPARATE_KEYS:-false}"
-B2_DATA_KEY="${B2_DATA_KEY:-}"
-B2_CONFIG_KEY="${B2_CONFIG_KEY:-}"
+B2_APPLICATION_KEY="$B2_APPLICATION_KEY"
+B2_USE_SEPARATE_KEYS=$B2_USE_SEPARATE_KEYS
+B2_DATA_KEY="$B2_DATA_KEY"
+B2_CONFIG_KEY="$B2_CONFIG_KEY"
 B2_CONFIG_BUCKET="$B2_CONFIG_BUCKET"
 B2_BUCKET="$B2_BUCKET"
 NOTIFY_WEBHOOK="$NOTIFY_WEBHOOK"
@@ -389,26 +367,25 @@ EOF
 
     rm "$temp_config"
     upload_encrypted_config
-    echo -e "${GREEN}✓ Configuração salva e criptografada${NC}"
+    echo -e "${GREEN}✓ Configuração criptografada${NC}"
 }
 
 upload_encrypted_config() {
-    log_info "Enviando configuração para ${CONFIG_STORAGE_TYPE}..."
+    log_info "Enviando para ${CONFIG_STORAGE_TYPE}..."
 
     if [ "$CONFIG_STORAGE_TYPE" = "oracle" ]; then
         rclone copy "$ENCRYPTED_CONFIG_FILE" "oracle:${CONFIG_BUCKET}/" --quiet && \
-            log_success "Configuração enviada para Oracle"
+            log_success "Enviado para Oracle"
     elif [ "$CONFIG_STORAGE_TYPE" = "b2" ]; then
         local b2_remote="b2"
-        [ "$B2_USE_SEPARATE_KEYS" = true ] && b2_remote="b2-config"
+        [ "$B2_USE_SEPARATE_KEYS" = "true" ] && b2_remote="b2-config"
         rclone copy "$ENCRYPTED_CONFIG_FILE" "${b2_remote}:${CONFIG_BUCKET}/" --quiet && \
-            log_success "Configuração enviada para B2"
+            log_success "Enviado para B2"
     fi
 }
 
+# Carregar config do cloud
 load_encrypted_config() {
-    log_info "📥 Carregando configuração do cloud..."
-
     echo ""
     echo -e "${BLUE}🔑 Digite sua senha mestra:${NC}"
     echo -n "> "
@@ -417,11 +394,15 @@ load_encrypted_config() {
 
     [ -z "$MASTER_PASSWORD" ] && return 1
 
+    log_info "📥 Tentando carregar configuração..."
+
     if load_metadata_from_supabase "$MASTER_PASSWORD"; then
-        [ "$CONFIG_STORAGE_TYPE" = "oracle" ] && \
+        # Baixar config
+        if [ "$CONFIG_STORAGE_TYPE" = "oracle" ]; then
             rclone copy "oracle:${CONFIG_BUCKET}/config.enc" "${SCRIPT_DIR}/" --quiet
-        [ "$CONFIG_STORAGE_TYPE" = "b2" ] && \
+        else
             rclone copy "b2:${CONFIG_BUCKET}/config.enc" "${SCRIPT_DIR}/" --quiet
+        fi
 
         if [ -f "$ENCRYPTED_CONFIG_FILE" ]; then
             local temp_decrypted="${SCRIPT_DIR}/temp_decrypted.env"
@@ -434,82 +415,91 @@ load_encrypted_config() {
                 source "$temp_decrypted"
                 BACKUP_MASTER_PASSWORD="$MASTER_PASSWORD"
                 rm "$temp_decrypted"
-                echo -e "${GREEN}✓ Configuração carregada!${NC}"
+                echo -e "${GREEN}✓ Configuração carregada do cloud!${NC}"
                 return 0
+            else
+                echo -e "${RED}❌ Senha incorreta!${NC}"
+                rm "$temp_decrypted" 2>/dev/null
             fi
         fi
     fi
+    
     return 1
 }
 
+# Aplicar no config.env
 apply_config_to_env() {
-    log_info "📝 Aplicando configuração no config.env..."
-    sed -i "s|N8N_ENCRYPTION_KEY=\".*\"|N8N_ENCRYPTION_KEY=\"$N8N_ENCRYPTION_KEY\"|g" "${SCRIPT_DIR}/config.env"
-    sed -i "s|N8N_POSTGRES_PASSWORD=\".*\"|N8N_POSTGRES_PASSWORD=\"$N8N_POSTGRES_PASSWORD\"|g" "${SCRIPT_DIR}/config.env"
-    sed -i "s|ORACLE_NAMESPACE=\".*\"|ORACLE_NAMESPACE=\"$ORACLE_NAMESPACE\"|g" "${SCRIPT_DIR}/config.env"
-    sed -i "s|ORACLE_REGION=\".*\"|ORACLE_REGION=\"$ORACLE_REGION\"|g" "${SCRIPT_DIR}/config.env"
-    sed -i "s|ORACLE_ACCESS_KEY=\".*\"|ORACLE_ACCESS_KEY=\"$ORACLE_ACCESS_KEY\"|g" "${SCRIPT_DIR}/config.env"
-    sed -i "s|ORACLE_SECRET_KEY=\".*\"|ORACLE_SECRET_KEY=\"$ORACLE_SECRET_KEY\"|g" "${SCRIPT_DIR}/config.env"
-    sed -i "s|ORACLE_CONFIG_BUCKET=\".*\"|ORACLE_CONFIG_BUCKET=\"$ORACLE_CONFIG_BUCKET\"|g" "${SCRIPT_DIR}/config.env"
-    sed -i "s|ORACLE_BUCKET=\".*\"|ORACLE_BUCKET=\"$ORACLE_BUCKET\"|g" "${SCRIPT_DIR}/config.env"
-    sed -i "s|B2_ACCOUNT_ID=\".*\"|B2_ACCOUNT_ID=\"$B2_ACCOUNT_ID\"|g" "${SCRIPT_DIR}/config.env"
-    sed -i "s|B2_APPLICATION_KEY=\".*\"|B2_APPLICATION_KEY=\"${B2_APPLICATION_KEY:-}\"|g" "${SCRIPT_DIR}/config.env"
-    sed -i "s|B2_USE_SEPARATE_KEYS=.*|B2_USE_SEPARATE_KEYS=${B2_USE_SEPARATE_KEYS}|g" "${SCRIPT_DIR}/config.env"
-    sed -i "s|B2_DATA_KEY=\".*\"|B2_DATA_KEY=\"${B2_DATA_KEY:-}\"|g" "${SCRIPT_DIR}/config.env"
-    sed -i "s|B2_CONFIG_KEY=\".*\"|B2_CONFIG_KEY=\"${B2_CONFIG_KEY:-}\"|g" "${SCRIPT_DIR}/config.env"
-    sed -i "s|B2_CONFIG_BUCKET=\".*\"|B2_CONFIG_BUCKET=\"$B2_CONFIG_BUCKET\"|g" "${SCRIPT_DIR}/config.env"
-    sed -i "s|B2_BUCKET=\".*\"|B2_BUCKET=\"$B2_BUCKET\"|g" "${SCRIPT_DIR}/config.env"
-    sed -i "s|BACKUP_MASTER_PASSWORD=\".*\"|BACKUP_MASTER_PASSWORD=\"$BACKUP_MASTER_PASSWORD\"|g" "${SCRIPT_DIR}/config.env"
-    [ -n "$NOTIFY_WEBHOOK" ] && sed -i "s|NOTIFY_WEBHOOK=\"\"|NOTIFY_WEBHOOK=\"$NOTIFY_WEBHOOK\"|g" "${SCRIPT_DIR}/config.env"
-    echo -e "${GREEN}✓ Configuração aplicada!${NC}"
+    log_info "📝 Aplicando no config.env..."
+    
+    sed -i "s|N8N_ENCRYPTION_KEY=\".*\"|N8N_ENCRYPTION_KEY=\"$N8N_ENCRYPTION_KEY\"|" "${SCRIPT_DIR}/config.env"
+    sed -i "s|N8N_POSTGRES_PASSWORD=\".*\"|N8N_POSTGRES_PASSWORD=\"$N8N_POSTGRES_PASSWORD\"|" "${SCRIPT_DIR}/config.env"
+    sed -i "s|ORACLE_NAMESPACE=\".*\"|ORACLE_NAMESPACE=\"$ORACLE_NAMESPACE\"|" "${SCRIPT_DIR}/config.env"
+    sed -i "s|ORACLE_REGION=\".*\"|ORACLE_REGION=\"$ORACLE_REGION\"|" "${SCRIPT_DIR}/config.env"
+    sed -i "s|ORACLE_ACCESS_KEY=\".*\"|ORACLE_ACCESS_KEY=\"$ORACLE_ACCESS_KEY\"|" "${SCRIPT_DIR}/config.env"
+    sed -i "s|ORACLE_SECRET_KEY=\".*\"|ORACLE_SECRET_KEY=\"$ORACLE_SECRET_KEY\"|" "${SCRIPT_DIR}/config.env"
+    sed -i "s|ORACLE_BUCKET=\".*\"|ORACLE_BUCKET=\"$ORACLE_BUCKET\"|" "${SCRIPT_DIR}/config.env"
+    sed -i "s|ORACLE_CONFIG_BUCKET=\".*\"|ORACLE_CONFIG_BUCKET=\"$ORACLE_CONFIG_BUCKET\"|" "${SCRIPT_DIR}/config.env"
+    sed -i "s|B2_ACCOUNT_ID=\".*\"|B2_ACCOUNT_ID=\"$B2_ACCOUNT_ID\"|" "${SCRIPT_DIR}/config.env"
+    sed -i "s|B2_APPLICATION_KEY=\".*\"|B2_APPLICATION_KEY=\"$B2_APPLICATION_KEY\"|" "${SCRIPT_DIR}/config.env"
+    sed -i "s|B2_USE_SEPARATE_KEYS=.*|B2_USE_SEPARATE_KEYS=$B2_USE_SEPARATE_KEYS|" "${SCRIPT_DIR}/config.env"
+    sed -i "s|B2_DATA_KEY=\".*\"|B2_DATA_KEY=\"$B2_DATA_KEY\"|" "${SCRIPT_DIR}/config.env"
+    sed -i "s|B2_CONFIG_KEY=\".*\"|B2_CONFIG_KEY=\"$B2_CONFIG_KEY\"|" "${SCRIPT_DIR}/config.env"
+    sed -i "s|B2_BUCKET=\".*\"|B2_BUCKET=\"$B2_BUCKET\"|" "${SCRIPT_DIR}/config.env"
+    sed -i "s|B2_CONFIG_BUCKET=\".*\"|B2_CONFIG_BUCKET=\"$B2_CONFIG_BUCKET\"|" "${SCRIPT_DIR}/config.env"
+    sed -i "s|BACKUP_MASTER_PASSWORD=\".*\"|BACKUP_MASTER_PASSWORD=\"$BACKUP_MASTER_PASSWORD\"|" "${SCRIPT_DIR}/config.env"
+    [ -n "$NOTIFY_WEBHOOK" ] && sed -i "s|NOTIFY_WEBHOOK=\"\"|NOTIFY_WEBHOOK=\"$NOTIFY_WEBHOOK\"|" "${SCRIPT_DIR}/config.env"
+    
+    log_success "✓ config.env atualizado"
 }
 
+# Setup interativo
 interactive_setup() {
     echo ""
-    echo -e "${BLUE}🚀 N8N Backup System - Configuração Interativa v3.0${NC}"
-    echo -e "${BLUE}====================================================${NC}"
+    echo -e "${BLUE}🚀 N8N Backup System - Setup v4.0${NC}"
+    echo -e "${BLUE}====================================${NC}"
 
     detect_credentials
 
+    # TENTAR CARREGAR CONFIG DO CLOUD
     if load_encrypted_config; then
-        echo -e "${GREEN}✓ Configuração carregada do cloud!${NC}"
+        # Sucesso - já tem tudo
         apply_config_to_env
+        
         echo ""
         echo -e "${GREEN}╔════════════════════════════════════════╗${NC}"
-        echo -e "${GREEN}║    SISTEMA JÁ CONFIGURADO! 🎉         ║${NC}"
+        echo -e "${GREEN}║    CONFIGURAÇÃO CARREGADA! 🎉         ║${NC}"
         echo -e "${GREEN}╚════════════════════════════════════════╝${NC}"
+        echo ""
+        echo "🎯 Sistema pronto!"
+        echo "   sudo ./n8n-backup.sh backup"
         return 0
-    else
-        echo -e "${YELLOW}⚠ Configuração não encontrada. Vamos configurar...${NC}"
-        ask_credentials
     fi
 
+    # NÃO ACHOU - PRIMEIRA INSTALAÇÃO
+    echo -e "${YELLOW}⚠ Primeira instalação detectada${NC}"
+    ask_all_credentials
     apply_config_to_env
     
-    log_info "Gerando configuração rclone..."
+    log_info "Gerando rclone..."
     source "${SCRIPT_DIR}/lib/generate-rclone.sh"
     generate_rclone_config
 
     save_encrypted_config
-    save_metadata_to_supabase "$BACKUP_MASTER_PASSWORD" "$CONFIG_STORAGE_TYPE" "$CONFIG_BUCKET"
+    save_metadata_to_supabase
 
     echo ""
     echo -e "${GREEN}╔════════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║    CONFIGURAÇÃO CONCLUÍDA! 🎉         ║${NC}"
     echo -e "${GREEN}╚════════════════════════════════════════╝${NC}"
     echo ""
-    echo "🎯 Próximos passos:"
+    echo "🎯 Próximo passo:"
     echo "   sudo ./n8n-backup.sh backup"
-    echo ""
 }
 
 main() {
     case "${1:-interactive}" in
         interactive) interactive_setup ;;
-        detect) detect_credentials ;;
-        save) save_encrypted_config ;;
-        load) load_encrypted_config ;;
-        *) echo "Uso: $0 {interactive|detect|save|load}"; exit 1 ;;
+        *) echo "Uso: $0 interactive"; exit 1 ;;
     esac
 }
 
