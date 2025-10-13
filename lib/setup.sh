@@ -308,7 +308,12 @@ B2_CONFIG_KEY=\"$B2_CONFIG_KEY\""
     log_info "Salvando metadados criptografados no Supabase..."
     echo "DEBUG: encrypted_metadata length: ${#encrypted_metadata}"
     echo "DEBUG: encrypted_metadata preview: ${encrypted_metadata:0:50}..."
-    local response=$(query_supabase "set" "$backup_key_hash" "encrypted" "$encrypted_metadata")
+    echo "DEBUG: JSON payload preview: {\"action\":\"set\",\"backupKeyHash\":\"$backup_key_hash\",\"storageType\":\"encrypted\",\"storageConfig\":\"${encrypted_metadata:0:50}...\"}"
+
+    # Escapar aspas duplas no base64 para JSON
+    local escaped_metadata=$(echo "$encrypted_metadata" | sed 's/"/\\"/g')
+
+    local response=$(query_supabase "set" "$backup_key_hash" "encrypted" "$escaped_metadata")
 
     if echo "$response" | jq -e '.success' > /dev/null 2>&1; then
         log_success "Metadados criptografados salvos"
