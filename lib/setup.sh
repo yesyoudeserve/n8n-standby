@@ -415,15 +415,17 @@ load_encrypted_config() {
     
     # Tentar Oracle primeiro
     if rclone ls "oracle:" > /dev/null 2>&1; then
-        if rclone copy "oracle:n8n-config/config.enc" "${SCRIPT_DIR}/" --quiet 2>/dev/null; then
+        if rclone copy "oracle:${ORACLE_CONFIG_BUCKET}/config.enc" "${SCRIPT_DIR}/" --quiet 2>/dev/null; then
             log_info "Encontrado no Oracle"
             found=true
         fi
     fi
-    
+
     # Se não achou, tentar B2
     if [ "$found" = false ] && rclone ls "b2:" > /dev/null 2>&1; then
-        if rclone copy "b2:n8n-config-offsite/config.enc" "${SCRIPT_DIR}/" --quiet 2>/dev/null; then
+        local b2_remote="b2"
+        [ "$B2_USE_SEPARATE_KEYS" = "true" ] && b2_remote="b2-config"
+        if rclone copy "${b2_remote}:${B2_CONFIG_BUCKET}/config.enc" "${SCRIPT_DIR}/" --quiet 2>/dev/null; then
             log_info "Encontrado no B2"
             found=true
         fi
