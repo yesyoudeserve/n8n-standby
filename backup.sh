@@ -14,6 +14,7 @@ source "${SCRIPT_DIR}/config.env"
 source "${SCRIPT_DIR}/lib/logger.sh"
 source "${SCRIPT_DIR}/lib/security.sh"
 source "${SCRIPT_DIR}/lib/postgres.sh"
+source "${SCRIPT_DIR}/lib/monitoring.sh"
 
 # Variáveis
 TIMESTAMP=$(date +%Y-%m-%d_%H-%M-%S)
