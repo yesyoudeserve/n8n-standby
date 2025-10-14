@@ -27,9 +27,9 @@ setup_rclone_for_root() {
     sudo mkdir -p /root/.config/rclone
 
     # Copiar configuração do usuário atual para root
-    sudo cp ~/.config/rclone/rclone.conf /root/.config/rclone/rclone.conf
-    sudo chown root:root /root/.config/rclone/rclone.conf
-    sudo chmod 600 /root/.config/rclone/rclone.conf
+    sudo cp ~/.config/rclone/rclone.conf /root/.config/rclone/rclone.conf 2>/dev/null || true
+    sudo chown root:root /root/.config/rclone/rclone.conf 2>/dev/null || true
+    sudo chmod 600 /root/.config/rclone/rclone.conf 2>/dev/null || true
     
     log_success "Configuração rclone sincronizada para root"
 
