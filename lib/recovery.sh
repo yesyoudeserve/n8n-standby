@@ -154,9 +154,15 @@ download_latest_backup() {
 install_easypanel() {
     log_info "[4/8] Instalando EasyPanel..."
 
-    # Verificar se já está instalado
+    # Verificar se já está instalado (comando easypanel)
     if command -v easypanel > /dev/null 2>&1; then
-        log_success "EasyPanel já instalado"
+        log_success "EasyPanel já instalado (comando encontrado)"
+        return 0
+    fi
+
+    # Verificar se container easypanel está rodando
+    if docker ps --format "{{.Names}}" | grep -q "^easypanel"; then
+        log_success "EasyPanel já instalado (container encontrado)"
         return 0
     fi
 
@@ -171,7 +177,11 @@ install_easypanel() {
     for url in "${install_urls[@]}"; do
         log_info "Tentando instalar do: $url"
         if curl -fsSL "$url" | sudo bash; then
-            if command -v easypanel > /dev/null 2>&1; then
+            # Aguardar um pouco para o serviço iniciar
+            sleep 5
+
+            # Verificar se foi instalado (comando ou container)
+            if command -v easypanel > /dev/null 2>&1 || docker ps --format "{{.Names}}" | grep -q "^easypanel"; then
                 log_success "EasyPanel instalado com sucesso"
                 installed=true
                 break
