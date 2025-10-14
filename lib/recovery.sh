@@ -124,7 +124,9 @@ download_latest_backup() {
     mkdir -p "${BACKUP_LOCAL_DIR}"
     local local_backup="${BACKUP_LOCAL_DIR}/${latest_backup}"
 
-    rclone copy "${BACKUP_SOURCE}:${BACKUP_BUCKET}/${latest_backup}" "${BACKUP_LOCAL_DIR}/" --progress
+    # Usar função auxiliar para determinar bucket correto
+    local bucket=$(get_backup_bucket)
+    rclone copy "${BACKUP_SOURCE}:${bucket}/${latest_backup}" "${BACKUP_LOCAL_DIR}/" --progress
 
     if [ ! -f "$local_backup" ]; then
         log_error "Falha no download do backup"
