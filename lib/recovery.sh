@@ -71,33 +71,11 @@ install_dependencies() {
 setup_rclone_recovery() {
     log_info "[2/8] Configurando rclone..."
 
-    # Copiar configuração existente se disponível
-    if [ -f "${SCRIPT_DIR}/rclone.conf" ]; then
-        mkdir -p ~/.config/rclone
-        cp "${SCRIPT_DIR}/rclone.conf" ~/.config/rclone/rclone.conf
-        log_success "Configuração rclone copiada"
-    else
-        log_error "Arquivo rclone.conf não encontrado!"
-        log_info "Configure manualmente: rclone config"
-        exit 1
-    fi
+    # Usar a mesma lógica do generate_rclone_config() - gerar dinamicamente
+    source "${SCRIPT_DIR}/lib/generate-rclone.sh"
+    generate_rclone_config
 
-    # Testar conexões
-    if [ "$ORACLE_ENABLED" = true ]; then
-        if rclone lsd oracle: > /dev/null 2>&1; then
-            log_success "Oracle OK"
-        else
-            log_error "Oracle falhou - verificar credenciais"
-        fi
-    fi
-
-    if [ "$B2_ENABLED" = true ]; then
-        if rclone lsd b2: > /dev/null 2>&1; then
-            log_success "B2 OK"
-        else
-            log_error "B2 falhou - verificar credenciais"
-        fi
-    fi
+    log_success "Rclone configurado dinamicamente"
 }
 
 # Baixar backup mais recente automaticamente
