@@ -17,6 +17,32 @@ generate_rclone_config() {
     echo "DEBUG: ORACLE_ACCESS_KEY=${ORACLE_ACCESS_KEY:0:8}..."
     echo "DEBUG: B2_ACCOUNT_ID=${B2_ACCOUNT_ID:0:8}..."
 
+    # VERIFICAR se variáveis estão vazias - se sim, usar valores padrão
+    if [ -z "$ORACLE_NAMESPACE" ] || [ "$ORACLE_NAMESPACE" = "ALTERAR_COM_SEU_NAMESPACE_REAL" ]; then
+        log_warning "ORACLE_NAMESPACE vazio ou padrão - usando valor padrão"
+        ORACLE_NAMESPACE="ALTERAR_COM_SEU_NAMESPACE_REAL"
+    fi
+    if [ -z "$ORACLE_REGION" ] || [ "$ORACLE_REGION" = "eu-madrid-1" ]; then
+        log_warning "ORACLE_REGION vazio ou padrão - usando eu-madrid-1"
+        ORACLE_REGION="eu-madrid-1"
+    fi
+    if [ -z "$ORACLE_ACCESS_KEY" ] || [ "$ORACLE_ACCESS_KEY" = "ALTERAR_COM_SEU_ACCESS_KEY_REAL" ]; then
+        log_warning "ORACLE_ACCESS_KEY vazio ou padrão - usando valor padrão"
+        ORACLE_ACCESS_KEY="ALTERAR_COM_SEU_ACCESS_KEY_REAL"
+    fi
+    if [ -z "$ORACLE_SECRET_KEY" ] || [ "$ORACLE_SECRET_KEY" = "ALTERAR_COM_SEU_SECRET_KEY_REAL" ]; then
+        log_warning "ORACLE_SECRET_KEY vazio ou padrão - usando valor padrão"
+        ORACLE_SECRET_KEY="ALTERAR_COM_SEU_SECRET_KEY_REAL"
+    fi
+    if [ -z "$B2_ACCOUNT_ID" ] || [ "$B2_ACCOUNT_ID" = "ALTERAR_COM_SEU_ACCOUNT_ID_REAL" ]; then
+        log_warning "B2_ACCOUNT_ID vazio ou padrão - usando valor padrão"
+        B2_ACCOUNT_ID="ALTERAR_COM_SEU_ACCOUNT_ID_REAL"
+    fi
+    if [ -z "$B2_APPLICATION_KEY" ] || [ "$B2_APPLICATION_KEY" = "ALTERAR_COM_SUA_APP_KEY_REAL" ]; then
+        log_warning "B2_APPLICATION_KEY vazio ou padrão - usando valor padrão"
+        B2_APPLICATION_KEY="ALTERAR_COM_SUA_APP_KEY_REAL"
+    fi
+
     # Criar diretório rclone para usuário atual
     mkdir -p ~/.config/rclone
 
