@@ -160,14 +160,32 @@ install_easypanel() {
         return 0
     fi
 
-    # Instalar EasyPanel
-    curl -fsSL https://github.com/easypanel-io/easypanel/releases/latest/download/install.sh | bash
+    # Instalar EasyPanel - tentar múltiplas URLs
+    local install_urls=(
+        "https://github.com/easypanel-io/easypanel/releases/latest/download/install.sh"
+        "https://raw.githubusercontent.com/easypanel-io/easypanel/main/install.sh"
+        "https://get.easypanel.io"
+    )
 
-    if command -v easypanel > /dev/null 2>&1; then
-        log_success "EasyPanel instalado"
-    else
-        log_error "Falha na instalação do EasyPanel"
-        exit 1
+    local installed=false
+    for url in "${install_urls[@]}"; do
+        log_info "Tentando instalar do: $url"
+        if curl -fsSL "$url" | bash; then
+            if command -v easypanel > /dev/null 2>&1; then
+                log_success "EasyPanel instalado com sucesso"
+                installed=true
+                break
+            fi
+        fi
+        log_warning "Falha com URL: $url"
+    done
+
+    if [ "$installed" = false ]; then
+        log_error "Não foi possível instalar o EasyPanel automaticamente"
+        log_info "Instale manualmente: https://easypanel.io/docs/getting-started"
+        log_info "Ou pule esta etapa se já tem containers N8N rodando"
+        # Não sair com erro - permitir continuar sem EasyPanel
+        return 0
     fi
 }
 
