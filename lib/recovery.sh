@@ -2,11 +2,27 @@
 # ============================================
 # Funções de Recuperação de Desastre
 # Arquivo: /opt/n8n-backup/lib/recovery.sh
+# Versão: 2.1 - Fix permissões e detecção
 # ============================================
+
+# Variável global para controlar uso de sudo
+USE_SUDO_DOCKER=false
+
+# Função wrapper para executar comandos Docker
+docker_exec() {
+    if [ "$USE_SUDO_DOCKER" = true ]; then
+        sudo docker "$@"
+    else
+        docker "$@"
+    fi
+}
 
 # Recuperação completa de desastre (nova VM)
 disaster_recovery() {
     log_info "Iniciando recuperação de desastre..."
+
+    # Diagnóstico inicial do ambiente
+    diagnose_environment
 
     # Passo 1: Instalar dependências
     install_dependencies
@@ -36,6 +52,66 @@ disaster_recovery() {
     show_recovery_summary
 }
 
+# Diagnosticar ambiente antes de começar
+diagnose_environment() {
+    log_info "🔍 Diagnóstico do ambiente..."
+    echo ""
+
+    # Verificar permissões Docker
+    if ! docker ps > /dev/null 2>&1; then
+        log_warning "⚠️  Sem permissão Docker para usuário atual"
+        
+        # Tentar com sudo
+        if sudo docker ps > /dev/null 2>&1; then
+            log_info "✓ Docker acessível com sudo"
+            
+            if confirm "Continuar usando sudo para operações Docker?" "y"; then
+                USE_SUDO_DOCKER=true
+                log_info "Modo sudo habilitado"
+            else
+                log_error "Operação cancelada."
+                log_info "💡 Para corrigir permissões:"
+                log_info "   sudo usermod -aG docker $USER"
+                log_info "   newgrp docker"
+                exit 1
+            fi
+        else
+            log_error "Docker não está instalado ou não está rodando"
+            exit 1
+        fi
+    else
+        log_success "✓ Permissões Docker OK"
+        USE_SUDO_DOCKER=false
+    fi
+
+    # Verificar se já existe ambiente N8N
+    local existing_containers=$(docker_exec ps -a --filter "name=n8n" --format "{{.Names}}" 2>/dev/null | wc -l)
+    
+    if [ "$existing_containers" -gt 0 ]; then
+        log_warning "⚠️  Detectados $existing_containers containers N8N existentes"
+        docker_exec ps -a --filter "name=n8n" --format "table {{.Names}}\t{{.Status}}"
+        echo ""
+        
+        if ! confirm "Isso parece um ambiente existente. Tem certeza que quer fazer recovery completo?" "n"; then
+            log_info "💡 Sugestão: Use './n8n-backup.sh restore' para restauração parcial"
+            exit 0
+        fi
+    else
+        log_info "✓ Ambiente novo detectado (sem containers N8N)"
+    fi
+
+    # Verificar se EasyPanel está rodando
+    if lsof -i:80 > /dev/null 2>&1; then
+        log_warning "⚠️  Porta 80 está ocupada (possível EasyPanel rodando)"
+        
+        if docker_exec ps --format "{{.Names}}" | grep -q "easypanel"; then
+            log_info "EasyPanel já está instalado"
+        fi
+    fi
+
+    echo ""
+}
+
 # Instalar dependências necessárias
 install_dependencies() {
     log_info "[1/8] Instalando dependências..."
@@ -56,13 +132,17 @@ install_dependencies() {
         curl \
         wget \
         openssl \
+        lsof \
         docker.io \
         docker-compose \
         > /dev/null 2>&1
 
-    # Instalar Node.js (para N8N)
-    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-    sudo apt install -y nodejs
+    # Verificar se Node.js está instalado
+    if ! command -v node > /dev/null 2>&1; then
+        log_info "Instalando Node.js..."
+        curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - > /dev/null 2>&1
+        sudo apt install -y nodejs > /dev/null 2>&1
+    fi
 
     log_success "Dependências instaladas"
 }
@@ -154,14 +234,20 @@ download_latest_backup() {
 install_easypanel() {
     log_info "[4/8] Instalando EasyPanel..."
 
-    # Verificar se já está instalado (comando easypanel)
+    # Verificar se porta 80 está ocupada (EasyPanel já instalado)
+    if lsof -i:80 > /dev/null 2>&1; then
+        log_success "EasyPanel já está rodando (porta 80 ocupada)"
+        return 0
+    fi
+
+    # Verificar se comando easypanel existe
     if command -v easypanel > /dev/null 2>&1; then
         log_success "EasyPanel já instalado (comando encontrado)"
         return 0
     fi
 
     # Verificar se container easypanel está rodando
-    if docker ps --format "{{.Names}}" | grep -q "^easypanel"; then
+    if docker_exec ps --format "{{.Names}}" | grep -q "^easypanel"; then
         log_success "EasyPanel já instalado (container encontrado)"
         return 0
     fi
@@ -176,12 +262,12 @@ install_easypanel() {
     local installed=false
     for url in "${install_urls[@]}"; do
         log_info "Tentando instalar do: $url"
-        if curl -fsSL "$url" | sudo bash; then
+        if curl -fsSL "$url" | sudo bash 2>/dev/null; then
             # Aguardar um pouco para o serviço iniciar
             sleep 10
 
             # Verificar se foi instalado (comando ou container)
-            if command -v easypanel > /dev/null 2>&1 || sudo docker ps --format "{{.Names}}" | grep -q "^easypanel"; then
+            if command -v easypanel > /dev/null 2>&1 || docker_exec ps --format "{{.Names}}" | grep -q "^easypanel"; then
                 log_success "EasyPanel instalado com sucesso"
                 installed=true
                 break
@@ -191,11 +277,14 @@ install_easypanel() {
     done
 
     if [ "$installed" = false ]; then
-        log_error "Não foi possível instalar o EasyPanel automaticamente"
-        log_info "Instale manualmente: https://easypanel.io/docs/getting-started"
-        log_info "Ou pule esta etapa se já tem containers N8N rodando"
-        # Não sair com erro - permitir continuar sem EasyPanel
-        return 0
+        log_warning "Não foi possível instalar o EasyPanel automaticamente"
+        log_info "Opções:"
+        log_info "  1. Instale manualmente: https://easypanel.io/docs/getting-started"
+        log_info "  2. Continue se já tem containers N8N configurados"
+        
+        if ! confirm "Continuar sem EasyPanel?" "y"; then
+            exit 1
+        fi
     fi
 }
 
@@ -218,6 +307,12 @@ restore_easypanel_schema() {
     if [ -f "$recreate_script" ]; then
         log_info "Executando script de recriação..."
         chmod +x "$recreate_script"
+        
+        # Modificar script para usar nossa função docker_exec se necessário
+        if [ "$USE_SUDO_DOCKER" = true ]; then
+            sed -i 's/^docker /sudo docker /g' "$recreate_script"
+        fi
+        
         bash "$recreate_script"
         log_success "Schema EasyPanel restaurado"
     else
@@ -226,12 +321,20 @@ restore_easypanel_schema() {
         # Tentar restaurar docker-compose.yml
         local compose_file=$(find "$temp_dir" -name "docker-compose.yml" | head -1)
         if [ -f "$compose_file" ]; then
+            mkdir -p /opt/n8n
             cp "$compose_file" /opt/n8n/docker-compose.yml
             cd /opt/n8n
-            docker-compose up -d
+            
+            if [ "$USE_SUDO_DOCKER" = true ]; then
+                sudo docker-compose up -d
+            else
+                docker-compose up -d
+            fi
+            
             log_success "docker-compose restaurado"
         else
-            log_error "Nenhum arquivo de configuração encontrado no backup"
+            log_warning "Nenhum arquivo de configuração encontrado no backup"
+            log_info "Você precisará recriar os containers manualmente"
         fi
     fi
 
@@ -248,23 +351,64 @@ restore_database() {
         return 1
     fi
 
+    # Detectar container PostgreSQL com múltiplas tentativas
+    local postgres_container=""
+    local retries=5
+    
+    log_info "Detectando container PostgreSQL..."
+    for i in $(seq 1 $retries); do
+        # Tentar detectar container
+        postgres_container=$(docker_exec ps --filter "name=postgres" --format "{{.Names}}" 2>/dev/null | grep -i postgres | head -1)
+        
+        if [ -n "$postgres_container" ]; then
+            log_success "PostgreSQL encontrado: $postgres_container"
+            break
+        fi
+        
+        log_info "PostgreSQL não encontrado. Tentativa $i/$retries..."
+        sleep 5
+    done
+
+    if [ -z "$postgres_container" ]; then
+        log_error "Container PostgreSQL não encontrado após $retries tentativas"
+        log_info "Containers disponíveis:"
+        docker_exec ps --format "table {{.Names}}\t{{.Status}}"
+        
+        log_info ""
+        log_info "💡 Possíveis soluções:"
+        log_info "  1. Verifique se o PostgreSQL foi criado pelo EasyPanel"
+        log_info "  2. Crie o container manualmente"
+        log_info "  3. Restaure o schema primeiro (passo anterior)"
+        
+        return 1
+    fi
+
     # Aguardar PostgreSQL ficar pronto
-    log_info "Aguardando PostgreSQL..."
+    log_info "Aguardando PostgreSQL ficar pronto..."
     local retries=30
     while [ $retries -gt 0 ]; do
-        if docker exec n8n_postgres psql -U postgres -c "SELECT 1" > /dev/null 2>&1; then
+        if docker_exec exec "$postgres_container" psql -U postgres -c "SELECT 1" > /dev/null 2>&1; then
+            log_success "PostgreSQL está pronto"
             break
         fi
         sleep 2
         ((retries--))
+        
+        # Log de progresso a cada 10 tentativas
+        if [ $((retries % 10)) -eq 0 ]; then
+            log_info "Ainda aguardando... ($retries tentativas restantes)"
+        fi
     done
 
     if [ $retries -eq 0 ]; then
-        log_error "PostgreSQL não ficou pronto"
+        log_error "PostgreSQL não ficou pronto após 60 segundos"
+        log_info "Verificando logs do container:"
+        docker_exec logs --tail 20 "$postgres_container"
         return 1
     fi
 
     # Extrair e restaurar dump
+    log_info "Extraindo backup..."
     local temp_dir=$(mktemp -d)
     tar -xzf "$LATEST_BACKUP_FILE" -C "$temp_dir"
 
@@ -272,13 +416,27 @@ restore_database() {
 
     if [ -f "$dump_file" ]; then
         log_info "Restaurando dump do banco..."
-        gunzip < "$dump_file" | docker exec -i n8n_postgres psql -U postgres -d n8n
-        log_success "Banco de dados restaurado"
+        log_info "Isso pode demorar alguns minutos..."
+        
+        # Restaurar banco
+        if gunzip < "$dump_file" | docker_exec exec -i "$postgres_container" psql -U postgres -d n8n 2>&1 | tee /tmp/restore.log | grep -v "^INSERT\|^COPY"; then
+            log_success "Banco de dados restaurado"
+        else
+            log_error "Falha ao restaurar banco"
+            log_info "Veja detalhes em: /tmp/restore.log"
+            rm -rf "$temp_dir"
+            return 1
+        fi
     else
         log_error "Dump SQL não encontrado no backup"
+        log_info "Conteúdo do backup:"
+        find "$temp_dir" -type f
+        rm -rf "$temp_dir"
+        return 1
     fi
 
     rm -rf "$temp_dir"
+    return 0
 }
 
 # Verificar e iniciar serviços
@@ -290,38 +448,45 @@ verify_and_start_services() {
     sleep 10
 
     # Verificar status dos containers N8N
-    local n8n_containers=$(docker ps --filter "name=n8n" --format "{{.Names}}")
+    local n8n_containers=$(docker_exec ps --filter "name=n8n" --format "{{.Names}}" 2>/dev/null)
 
     if [ -z "$n8n_containers" ]; then
         log_error "Nenhum container N8N encontrado"
+        log_info "Containers disponíveis:"
+        docker_exec ps --format "table {{.Names}}\t{{.Status}}"
         return 1
     fi
 
     echo "$n8n_containers" | while read container; do
-        local status=$(docker inspect "$container" | jq -r '.[0].State.Status')
+        local status=$(docker_exec inspect "$container" 2>/dev/null | jq -r '.[0].State.Status')
         if [ "$status" = "running" ]; then
             log_success "Container OK: $container"
         else
             log_warning "Container com problema: $container ($status)"
-            docker restart "$container"
+            log_info "Tentando reiniciar..."
+            docker_exec restart "$container"
         fi
     done
 
     # Testar conectividade do N8N
     log_info "Testando N8N..."
-    local retries=10
+    local retries=12
+    local wait_seconds=5
+    
     while [ $retries -gt 0 ]; do
         if curl -f http://localhost:5678/healthz > /dev/null 2>&1; then
             log_success "N8N está respondendo"
-            break
+            return 0
         fi
-        sleep 5
+        
+        log_info "Aguardando N8N iniciar... ($retries tentativas restantes)"
+        sleep $wait_seconds
         ((retries--))
     done
 
-    if [ $retries -eq 0 ]; then
-        log_warning "N8N não está respondendo - verificar logs"
-    fi
+    log_warning "N8N não está respondendo após 60 segundos"
+    log_info "Verifique os logs:"
+    log_info "  docker logs n8n-main"
 }
 
 # Configurar monitoramento básico
@@ -353,10 +518,15 @@ fi
 # Verificar PostgreSQL
 echo ""
 echo "PostgreSQL Status:"
-if docker exec n8n_postgres psql -U postgres -c "SELECT 1" > /dev/null 2>&1; then
-    echo "✓ PostgreSQL OK"
+POSTGRES_CONTAINER=$(docker ps --filter "name=postgres" --format "{{.Names}}" | head -1)
+if [ -n "$POSTGRES_CONTAINER" ]; then
+    if docker exec "$POSTGRES_CONTAINER" psql -U postgres -c "SELECT 1" > /dev/null 2>&1; then
+        echo "✓ PostgreSQL OK"
+    else
+        echo "✗ PostgreSQL falha"
+    fi
 else
-    echo "✗ PostgreSQL falha"
+    echo "✗ PostgreSQL container não encontrado"
 fi
 
 echo ""
@@ -374,16 +544,16 @@ EOF
 # Mostrar resumo da recuperação
 show_recovery_summary() {
     echo ""
-    echo "╔════════════════════════════════════════╗"
+    echo "╔═══════════════════════════════════════╗"
     echo "║     RECUPERAÇÃO CONCLUÍDA! 🎉         ║"
-    echo "╚════════════════════════════════════════╝"
+    echo "╚═══════════════════════════════════════╝"
     echo ""
     echo "📋 Resumo da Recuperação:"
     echo ""
     echo "✓ Dependências instaladas"
     echo "✓ Rclone configurado"
     echo "✓ Backup baixado: $(basename "$LATEST_BACKUP_FILE")"
-    echo "✓ EasyPanel instalado"
+    echo "✓ EasyPanel verificado/instalado"
     echo "✓ Schema restaurado"
     echo "✓ Banco de dados restaurado"
     echo "✓ Serviços verificados"
@@ -398,6 +568,16 @@ show_recovery_summary() {
     echo "   - Verifique se as credenciais estão funcionando"
     echo "   - Teste os workflows existentes"
     echo "   - Configure backup automático: crontab -e"
+    
+    if [ "$USE_SUDO_DOCKER" = true ]; then
+        echo ""
+        echo "⚠️  Permissões Docker:"
+        echo "   Este recovery foi executado com sudo."
+        echo "   Para usar Docker sem sudo:"
+        echo "   sudo usermod -aG docker $USER"
+        echo "   newgrp docker"
+    fi
+    
     echo ""
 }
 

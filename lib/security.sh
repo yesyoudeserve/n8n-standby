@@ -2,6 +2,7 @@
 # ============================================
 # Funções de Segurança e Criptografia
 # Arquivo: /opt/n8n-backup/lib/security.sh
+# Versão: 2.1 - Melhorias rclone sync
 # ============================================
 
 # Carregar funções do logger
@@ -34,17 +35,39 @@ setup_rclone_for_root() {
     log_success "Configuração rclone sincronizada para root"
 
     # Testar configuração
-    if sudo rclone lsd oracle: > /dev/null 2>&1; then
-        log_success "Oracle rclone OK (root)"
-    else
-        log_warning "Oracle rclone falhou (root) - verificar credenciais"
+    local test_count=0
+    
+    if [ "$ORACLE_ENABLED" = "true" ]; then
+        if sudo rclone lsd oracle: > /dev/null 2>&1; then
+            log_success "✓ Oracle rclone OK (root)"
+            test_count=$((test_count + 1))
+        else
+            log_warning "✗ Oracle rclone falhou (root)"
+        fi
     fi
 
-    if sudo rclone lsd b2: > /dev/null 2>&1; then
-        log_success "B2 rclone OK (root)"
-    else
-        log_warning "B2 rclone falhou (root) - verificar credenciais"
+    if [ "$B2_ENABLED" = "true" ]; then
+        if sudo rclone lsd b2: > /dev/null 2>&1; then
+            log_success "✓ B2 rclone OK (root)"
+            test_count=$((test_count + 1))
+        else
+            log_warning "✗ B2 rclone falhou (root)"
+        fi
     fi
+    
+    # Retornar sucesso se pelo menos um storage funcionar
+    [ $test_count -gt 0 ]
+}
+
+# Sincronizar rclone automaticamente antes de operações críticas
+auto_sync_rclone() {
+    # Verificar se já está sincronizado
+    if sudo rclone listremotes > /dev/null 2>&1; then
+        return 0  # Já está OK
+    fi
+    
+    log_info "Auto-sincronizando rclone..."
+    setup_rclone_for_root
 }
 
 # Gerar chave de criptografia se não existir
@@ -67,6 +90,9 @@ load_encryption_key() {
 
     # Tentar baixar do cloud storage
     log_info "Tentando baixar chave do cloud storage..."
+    
+    # Garantir rclone sincronizado
+    auto_sync_rclone
 
     # Tentar Oracle primeiro
     if [ "$ORACLE_ENABLED" = true ]; then
@@ -108,6 +134,9 @@ load_encryption_key() {
 save_encryption_key_to_cloud() {
     log_info "Salvando chave de criptografia no cloud..."
 
+    # Garantir rclone sincronizado
+    auto_sync_rclone
+
     # Criptografar a chave com uma senha derivada
     local temp_encrypted="${SCRIPT_DIR}/temp_key.enc"
     echo "$ENCRYPTION_KEY" | openssl enc -aes-256-cbc -salt -pbkdf2 \
@@ -118,16 +147,14 @@ save_encryption_key_to_cloud() {
     local uploaded=false
 
     if [ "$ORACLE_ENABLED" = true ]; then
-        sudo rclone copy "$temp_encrypted" "oracle:${ORACLE_BUCKET}/${CLOUD_ENCRYPTION_KEY}" --quiet
-        if [ $? -eq 0 ]; then
+        if sudo rclone copy "$temp_encrypted" "oracle:${ORACLE_BUCKET}/${CLOUD_ENCRYPTION_KEY}" --quiet 2>/dev/null; then
             log_success "Chave salva no Oracle"
             uploaded=true
         fi
     fi
 
     if [ "$B2_ENABLED" = true ]; then
-        sudo rclone copy "$temp_encrypted" "b2:${B2_BUCKET}/${CLOUD_ENCRYPTION_KEY}" --quiet
-        if [ $? -eq 0 ]; then
+        if sudo rclone copy "$temp_encrypted" "b2:${B2_BUCKET}/${CLOUD_ENCRYPTION_KEY}" --quiet 2>/dev/null; then
             log_success "Chave salva no B2"
             uploaded=true
         fi
@@ -229,7 +256,7 @@ encrypt_sensitive_data() {
     )
 
     for pattern in "${sensitive_files[@]}"; do
-        for file in $(find "$backup_dir" -name "$pattern" 2>/dev/null); do
+        for file in $(find "$backup_dir" -path "*/$pattern" 2>/dev/null); do
             if [ -f "$file" ]; then
                 local encrypted_file="${file}.enc"
                 if encrypt_file "$file" "$encrypted_file"; then

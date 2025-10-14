@@ -2,6 +2,7 @@
 # ============================================
 # Script Principal de Backup N8N
 # Arquivo: /opt/n8n-backup/backup.sh
+# Versão: 2.1 - Fix auto-sync rclone
 # ============================================
 
 set -euo pipefail
@@ -42,7 +43,7 @@ main() {
     # Criar diretório temporário
     mkdir -p "${BACKUP_DIR}"
 
-    # Inicializar segurança
+    # Inicializar segurança (agora com auto-sync do rclone)
     init_security
 
     # 📊 ALERTA: Status - Preparação concluída
@@ -155,20 +156,28 @@ backup_easypanel_configs() {
     local config_dir="${BACKUP_DIR}/easypanel_configs"
     mkdir -p "${config_dir}"
     
+    # Detectar se precisa usar sudo para Docker
+    local docker_cmd="docker"
+    if ! docker ps > /dev/null 2>&1; then
+        if sudo docker ps > /dev/null 2>&1; then
+            docker_cmd="sudo docker"
+        fi
+    fi
+    
     # Encontrar containers do n8n
-    local n8n_containers=$(docker ps -a --filter "name=n8n" --format "{{.Names}}")
+    local n8n_containers=$($docker_cmd ps -a --filter "name=n8n" --format "{{.Names}}")
     
     for container in $n8n_containers; do
         log_info "Exportando configs do container: ${container}"
         
         # Exportar variáveis de ambiente
-        docker inspect "$container" | jq '.[0].Config.Env' > "${config_dir}/${container}_env.json"
+        $docker_cmd inspect "$container" | jq '.[0].Config.Env' > "${config_dir}/${container}_env.json"
         
         # Exportar volumes
-        docker inspect "$container" | jq '.[0].Mounts' > "${config_dir}/${container}_volumes.json"
+        $docker_cmd inspect "$container" | jq '.[0].Mounts' > "${config_dir}/${container}_volumes.json"
         
         # Exportar labels (importante no EasyPanel!)
-        docker inspect "$container" | jq '.[0].Config.Labels' > "${config_dir}/${container}_labels.json"
+        $docker_cmd inspect "$container" | jq '.[0].Config.Labels' > "${config_dir}/${container}_labels.json"
     done
     
     # NOVO: Backup da estrutura completa do EasyPanel
@@ -176,7 +185,7 @@ backup_easypanel_configs() {
     
     # EasyPanel geralmente armazena configs em /etc/easypanel ou ~/.easypanel
     if [ -d "/etc/easypanel" ]; then
-        cp -r /etc/easypanel "${config_dir}/easypanel_etc" 2>/dev/null || true
+        sudo cp -r /etc/easypanel "${config_dir}/easypanel_etc" 2>/dev/null || true
     fi
     
     if [ -d "$HOME/.easypanel" ]; then
@@ -198,14 +207,14 @@ backup_easypanel_configs() {
             # Também copiar o diretório inteiro se existir
             local project_dir=$(dirname "$path")
             if [ -d "$project_dir" ]; then
-                cp -r "$project_dir" "${config_dir}/project_full" 2>/dev/null || true
+                sudo cp -r "$project_dir" "${config_dir}/project_full" 2>/dev/null || true
             fi
             break
         fi
     done
     
     # Exportar network do Docker
-    docker network inspect $(docker inspect n8n-main | jq -r '.[0].NetworkSettings.Networks | keys[0]') \
+    $docker_cmd network inspect $($docker_cmd inspect n8n-main 2>/dev/null | jq -r '.[0].NetworkSettings.Networks | keys[0]' 2>/dev/null) \
         > "${config_dir}/docker_network.json" 2>/dev/null || true
     
     # Criar um script de recriação automática
@@ -235,8 +244,8 @@ EOFSCRIPT
     
     for container in $n8n_containers; do
         # Extrair comando docker run equivalente (aproximado)
-        local image=$(docker inspect "$container" | jq -r '.[0].Config.Image')
-        local network=$(docker inspect "$container" | jq -r '.[0].NetworkSettings.Networks | keys[0]')
+        local image=$($docker_cmd inspect "$container" | jq -r '.[0].Config.Image')
+        local network=$($docker_cmd inspect "$container" | jq -r '.[0].NetworkSettings.Networks | keys[0]')
         
         cat >> "${config_dir}/docker_recreate_commands.sh" << EOFCMD
 
@@ -247,12 +256,12 @@ docker run -d \\
 EOFCMD
         
         # Adicionar variáveis de ambiente
-        docker inspect "$container" | jq -r '.[0].Config.Env[]' | while read env; do
+        $docker_cmd inspect "$container" | jq -r '.[0].Config.Env[]' | while read env; do
             echo "  -e \"${env}\" \\" >> "${config_dir}/docker_recreate_commands.sh"
         done
         
         # Adicionar volumes
-        docker inspect "$container" | jq -r '.[0].Mounts[] | "-v \(.Source):\(.Destination)"' | while read vol; do
+        $docker_cmd inspect "$container" | jq -r '.[0].Mounts[] | "-v \(.Source):\(.Destination)"' | while read vol; do
             echo "  ${vol} \\" >> "${config_dir}/docker_recreate_commands.sh"
         done
         
@@ -328,22 +337,30 @@ upload_to_oracle() {
 
     log_info "Fazendo upload para Oracle Object Storage..."
 
+    # Garantir rclone sincronizado antes do upload
+    auto_sync_rclone
+
     # 📤 ALERTA: Status upload Oracle
     send_discord_alert "📤 **Upload Oracle: Iniciado**\n\nEnviando arquivo para Oracle Object Storage..." "info"
 
     show_progress "Upload para Oracle"
 
-    rclone copy "${BACKUP_ARCHIVE}" "oracle:${ORACLE_BUCKET}/" --progress 2>&1 | \
+    if sudo rclone copy "${BACKUP_ARCHIVE}" "oracle:${ORACLE_BUCKET}/" --progress 2>&1 | \
         grep -oP '\d+%' | while read pct; do
             echo "$pct" | sed 's/%//'
-        done || true
+        done; then
+        
+        clear_progress
 
-    clear_progress
-
-    if rclone lsf "oracle:${ORACLE_BUCKET}/" | grep -q "$(basename ${BACKUP_ARCHIVE})"; then
-        log_success "Upload para Oracle concluído"
-        send_discord_alert "✅ **Upload Oracle: Concluído**\n\nArquivo enviado com sucesso para Oracle Object Storage." "success"
+        if sudo rclone lsf "oracle:${ORACLE_BUCKET}/" | grep -q "$(basename ${BACKUP_ARCHIVE})"; then
+            log_success "Upload para Oracle concluído"
+            send_discord_alert "✅ **Upload Oracle: Concluído**\n\nArquivo enviado com sucesso para Oracle Object Storage." "success"
+        else
+            log_error "Falha no upload para Oracle"
+            send_discord_alert "❌ **Upload Oracle: Falhou**\n\nErro ao enviar arquivo para Oracle Object Storage." "error"
+        fi
     else
+        clear_progress
         log_error "Falha no upload para Oracle"
         send_discord_alert "❌ **Upload Oracle: Falhou**\n\nErro ao enviar arquivo para Oracle Object Storage." "error"
     fi
@@ -358,22 +375,30 @@ upload_to_b2() {
 
     log_info "Fazendo upload para Backblaze B2..."
 
+    # Garantir rclone sincronizado antes do upload
+    auto_sync_rclone
+
     # 📤 ALERTA: Status upload B2
     send_discord_alert "📤 **Upload B2: Iniciado**\n\nEnviando arquivo para Backblaze B2..." "info"
 
     show_progress "Upload para B2"
 
-    rclone copy "${BACKUP_ARCHIVE}" "b2:${B2_BUCKET}/" --progress 2>&1 | \
+    if sudo rclone copy "${BACKUP_ARCHIVE}" "b2:${B2_BUCKET}/" --progress 2>&1 | \
         grep -oP '\d+%' | while read pct; do
             echo "$pct" | sed 's/%//'
-        done || true
+        done; then
+        
+        clear_progress
 
-    clear_progress
-
-    if rclone lsf "b2:${B2_BUCKET}/" | grep -q "$(basename ${BACKUP_ARCHIVE})"; then
-        log_success "Upload para B2 concluído"
-        send_discord_alert "✅ **Upload B2: Concluído**\n\nArquivo enviado com sucesso para Backblaze B2." "success"
+        if sudo rclone lsf "b2:${B2_BUCKET}/" | grep -q "$(basename ${BACKUP_ARCHIVE})"; then
+            log_success "Upload para B2 concluído"
+            send_discord_alert "✅ **Upload B2: Concluído**\n\nArquivo enviado com sucesso para Backblaze B2." "success"
+        else
+            log_error "Falha no upload para B2"
+            send_discord_alert "❌ **Upload B2: Falhou**\n\nErro ao enviar arquivo para Backblaze B2." "error"
+        fi
     else
+        clear_progress
         log_error "Falha no upload para B2"
         send_discord_alert "❌ **Upload B2: Falhou**\n\nErro ao enviar arquivo para Backblaze B2." "error"
     fi
@@ -407,7 +432,7 @@ cleanup_remote_backups() {
     log_info "Limpando backups remotos em ${remote}..."
     
     # Manter últimos 7 dias
-    rclone delete "${remote}:${bucket}/" \
+    sudo rclone delete "${remote}:${bucket}/" \
         --min-age ${REMOTE_RETENTION_DAILY}d \
         --include "n8n_backup_*.tar.gz" 2>/dev/null || true
 }
@@ -428,9 +453,9 @@ show_summary() {
     local stats=$(cat "${BACKUP_DIR}/stats.txt" 2>/dev/null || echo "N/A")
     
     echo ""
-    echo "╔════════════════════════════════════════╗"
+    echo "╔═══════════════════════════════════════╗"
     echo "║         RESUMO DO BACKUP               ║"
-    echo "╚════════════════════════════════════════╝"
+    echo "╚═══════════════════════════════════════╝"
     echo ""
     echo "Arquivo: $(basename ${BACKUP_ARCHIVE})"
     echo "Tamanho: ${backup_size}"
