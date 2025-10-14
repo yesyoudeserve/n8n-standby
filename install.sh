@@ -33,7 +33,7 @@ ORIGINAL_USER=${SUDO_USER:-$USER}
 
 echo -e "${BLUE}[1/6]${NC} Instalando dependências..."
 apt update -qq
-apt install -y postgresql-client jq pv dialog gzip pigz rclone git curl wget openssl > /dev/null 2>&1
+apt install -y postgresql-client jq pv dialog gzip pigz rclone git curl wget openssl ufw > /dev/null 2>&1
 echo -e "${GREEN}✓ Dependências instaladas${NC}"
 
 echo -e "${BLUE}[2/6]${NC} Criando estrutura de diretórios..."
