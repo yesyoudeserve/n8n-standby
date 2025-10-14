@@ -124,8 +124,21 @@ download_latest_backup() {
     mkdir -p "${BACKUP_LOCAL_DIR}"
     local local_backup="${BACKUP_LOCAL_DIR}/${latest_backup}"
 
-    # Usar função auxiliar para determinar bucket correto
-    local bucket=$(get_backup_bucket)
+    # Determinar bucket correto baseado na fonte
+    local bucket=""
+    case $BACKUP_SOURCE in
+        oracle)
+            bucket="$ORACLE_BUCKET"
+            ;;
+        b2)
+            bucket="$B2_BUCKET"
+            ;;
+        *)
+            log_error "Fonte de backup desconhecida: $BACKUP_SOURCE"
+            exit 1
+            ;;
+    esac
+
     rclone copy "${BACKUP_SOURCE}:${bucket}/${latest_backup}" "${BACKUP_LOCAL_DIR}/" --progress
 
     if [ ! -f "$local_backup" ]; then
