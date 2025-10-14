@@ -170,7 +170,7 @@ install_easypanel() {
     local installed=false
     for url in "${install_urls[@]}"; do
         log_info "Tentando instalar do: $url"
-        if curl -fsSL "$url" | bash; then
+        if curl -fsSL "$url" | sudo bash; then
             if command -v easypanel > /dev/null 2>&1; then
                 log_success "EasyPanel instalado com sucesso"
                 installed=true
