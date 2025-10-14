@@ -5,7 +5,6 @@
 # ============================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source "${SCRIPT_DIR}/config.env"
 source "${SCRIPT_DIR}/lib/logger.sh"
 
 generate_rclone_config() {
