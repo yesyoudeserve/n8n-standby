@@ -81,7 +81,27 @@ else
     echo -e "${GREEN}✓ Backup automático configurado (diariamente às 3h AM)${NC}"
 fi
 
-echo -e "${BLUE}[6/6]${NC} Configurando monitoramento..."
+echo -e "${BLUE}[6/6]${NC} Configurando firewall (UFW)..."
+
+# Habilitar UFW se não estiver ativo
+sudo ufw --force enable
+
+# Regras essenciais para N8N/EasyPanel
+sudo ufw allow ssh                    # 22 - SSH
+sudo ufw allow 80/tcp                 # 80 - HTTP N8N
+sudo ufw allow 443/tcp                # 443 - HTTPS N8N
+sudo ufw allow 3000/tcp               # 3000 - EasyPanel
+sudo ufw allow 4000/tcp               # 4000 - PgAdmin
+sudo ufw allow 5678/tcp               # 5678 - N8N Web Interface
+sudo ufw allow 5289/tcp               # 5289 - N8N 2
+sudo ufw allow 8080/tcp               # 8080 - Evolution API
+
+# Recarregar regras
+sudo ufw reload
+
+echo -e "${GREEN}✓ Firewall configurado com portas essenciais${NC}"
+
+echo -e "${BLUE}[7/7]${NC} Configurando monitoramento..."
 su - $ORIGINAL_USER -c "/opt/n8n-backup/lib/monitoring.sh setup" 2>/dev/null || true
 echo -e "${GREEN}✓ Monitoramento configurado${NC}"
 
