@@ -80,6 +80,11 @@ echo -e "${GREEN}✓ Firewall configurado${NC}"
 
 echo -e "${BLUE}[8/8]${NC} Instalando EasyPanel..."
 curl -fsSL https://get.easypanel.io | bash
+
+# Aguardar EasyPanel iniciar
+echo -e "${YELLOW}Aguardando EasyPanel iniciar...${NC}"
+sleep 10
+
 echo -e "${GREEN}✓ EasyPanel instalado${NC}"
 
 echo ""
