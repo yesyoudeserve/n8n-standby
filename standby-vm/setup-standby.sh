@@ -82,7 +82,12 @@ apt install -y nodejs -qq
 echo -e "${GREEN}✓ Node.js instalado${NC}"
 
 echo -e "${BLUE}[6/8]${NC} Instalando rclone..."
-curl -fsSL https://rclone.org/install.sh | bash
+# Verificar se rclone já está instalado
+if command -v rclone > /dev/null 2>&1; then
+    echo -e "${YELLOW}rclone já instalado, pulando...${NC}"
+else
+    curl -fsSL https://rclone.org/install.sh | bash
+fi
 echo -e "${GREEN}✓ rclone instalado${NC}"
 
 echo -e "${BLUE}[7/8]${NC} Configurando firewall..."
