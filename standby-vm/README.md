@@ -53,7 +53,12 @@ Este sistema implementa uma arquitetura de alta disponibilidade com:
 ### 1. Configurar VM Standby (Uma Vez)
 
 ```bash
-# Na VM Standby (nova)
+# Opção 1: Bootstrap automático (recomendado)
+curl -fsSL https://raw.githubusercontent.com/yesyoudeserve/n8n-backup/main/standby-vm/bootstrap-standby.sh | bash
+cd /opt/n8n-standby
+sudo ./setup-standby.sh
+
+# Opção 2: Manual
 git clone https://github.com/yesyoudeserve/n8n-backup.git
 cd n8n-backup/standby-vm
 sudo ./setup-standby.sh
@@ -180,8 +185,14 @@ VM Standby:  ❌ Desligada (backup)
 
 ### VM Principal
 ```bash
-# Backup automático já configurado
-# Verificar: crontab -l
+# Configurar backup automático a cada 3h
+echo "0 */3 * * * /opt/n8n-backup/backup.sh >> /opt/n8n-backup/logs/cron.log 2>&1" | sudo crontab -
+
+# Verificar configuração
+sudo crontab -l
+
+# Backup manual (teste)
+sudo ./backup.sh
 ```
 
 ### VM Standby
