@@ -301,37 +301,45 @@ restore_easypanel_schema() {
     local temp_dir=$(mktemp -d)
     tar -xzf "$LATEST_BACKUP_FILE" -C "$temp_dir"
 
-    # Procurar script de recriação
-    local recreate_script=$(find "$temp_dir" -name "RECREATE.sh" | head -1)
+    # Procurar script de recriação (aceitar múltiplos nomes)
+    local recreate_script=""
+    for script_name in "RECREATE.sh" "docker_recreate_commands.sh"; do
+        recreate_script=$(find "$temp_dir" -name "$script_name" | head -1)
+        if [ -n "$recreate_script" ]; then
+            log_info "Encontrado script: $script_name"
+            break
+        fi
+    done
 
     if [ -f "$recreate_script" ]; then
         log_info "Executando script de recriação..."
         chmod +x "$recreate_script"
-        
+
         # Modificar script para usar nossa função docker_exec se necessário
         if [ "$USE_SUDO_DOCKER" = true ]; then
             sed -i 's/^docker /sudo docker /g' "$recreate_script"
         fi
-        
+
         bash "$recreate_script"
-        log_success "Schema EasyPanel restaurado"
+        log_success "Schema EasyPanel restaurado via script"
     else
-        log_warning "Script RECREATE.sh não encontrado, tentando restauração manual..."
+        log_warning "Script de recriação não encontrado, tentando restauração manual..."
 
         # Tentar restaurar docker-compose.yml
         local compose_file=$(find "$temp_dir" -name "docker-compose.yml" | head -1)
         if [ -f "$compose_file" ]; then
+            log_info "Restaurando via docker-compose..."
             mkdir -p /opt/n8n
             cp "$compose_file" /opt/n8n/docker-compose.yml
             cd /opt/n8n
-            
+
             if [ "$USE_SUDO_DOCKER" = true ]; then
                 sudo docker-compose up -d
             else
                 docker-compose up -d
             fi
-            
-            log_success "docker-compose restaurado"
+
+            log_success "Schema restaurado via docker-compose"
         else
             log_warning "Nenhum arquivo de configuração encontrado no backup"
             log_info "Você precisará recriar os containers manualmente"
