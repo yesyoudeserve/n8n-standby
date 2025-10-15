@@ -110,8 +110,8 @@ if docker ps -a --format 'table {{.Names}}' | grep -q easypanel; then
     echo -e "${YELLOW}EasyPanel já instalado, pulando...${NC}"
 else
     # Tentar instalar com retry em caso de rate limit
-    local retry_count=0
-    local max_retries=3
+    retry_count=0
+    max_retries=3
 
     while [ $retry_count -lt $max_retries ]; do
         if curl -fsSL https://get.easypanel.io | bash; then
