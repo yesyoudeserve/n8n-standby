@@ -101,14 +101,19 @@ EOF
     
     log_success "Configuração rclone gerada para usuário atual"
     
-    # Copiar para root (necessário para sudo)
+    # Copiar para root (necessário para sudo) - apenas se diferente
     log_info "Copiando configuração para root..."
     sudo mkdir -p /root/.config/rclone
-    sudo cp ~/.config/rclone/rclone.conf /root/.config/rclone/rclone.conf
-    sudo chown root:root /root/.config/rclone/rclone.conf
-    sudo chmod 600 /root/.config/rclone/rclone.conf
-    
-    log_success "Configuração rclone copiada para root"
+
+    # Verificar se os arquivos são diferentes antes de copiar
+    if ! sudo cmp -s ~/.config/rclone/rclone.conf /root/.config/rclone/rclone.conf 2>/dev/null; then
+        sudo cp ~/.config/rclone/rclone.conf /root/.config/rclone/rclone.conf
+        sudo chown root:root /root/.config/rclone/rclone.conf
+        sudo chmod 600 /root/.config/rclone/rclone.conf
+        log_success "Configuração rclone copiada para root"
+    else
+        log_info "Configuração rclone já está sincronizada com root"
+    fi
     
     # Testar conexões (como usuário normal)
     echo ""
