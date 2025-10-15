@@ -104,7 +104,33 @@ ufw reload
 echo -e "${GREEN}✓ Firewall configurado${NC}"
 
 echo -e "${BLUE}[8/8]${NC} Instalando EasyPanel..."
-curl -fsSL https://get.easypanel.io | bash
+
+# Verificar se EasyPanel já está instalado
+if docker ps -a --format 'table {{.Names}}' | grep -q easypanel; then
+    echo -e "${YELLOW}EasyPanel já instalado, pulando...${NC}"
+else
+    # Tentar instalar com retry em caso de rate limit
+    local retry_count=0
+    local max_retries=3
+
+    while [ $retry_count -lt $max_retries ]; do
+        if curl -fsSL https://get.easypanel.io | bash; then
+            echo -e "${GREEN}✓ EasyPanel instalado${NC}"
+            break
+        else
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -lt $max_retries ]; then
+                echo -e "${YELLOW}Tentativa $retry_count falhou, tentando novamente em 30s...${NC}"
+                sleep 30
+            else
+                echo -e "${RED}✗ Falha na instalação do EasyPanel após $max_retries tentativas${NC}"
+                echo -e "${YELLOW}Você pode tentar instalar manualmente depois:${NC}"
+                echo "  curl -fsSL https://get.easypanel.io | bash"
+                exit 1
+            fi
+        fi
+    done
+fi
 
 # Aguardar EasyPanel iniciar
 echo -e "${YELLOW}Aguardando EasyPanel iniciar...${NC}"
