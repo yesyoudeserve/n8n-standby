@@ -144,18 +144,18 @@ backup_postgresql() {
     fi
 }
 
-# Backup das configurações EasyPanel
+# Backup das configurações EasyPanel (VERSÃO COMPLETA)
 backup_easypanel_configs() {
     if [ "$BACKUP_EASYPANEL_CONFIGS" != true ]; then
         log_info "Backup de configs EasyPanel desabilitado"
         return 0
     fi
-    
-    log_info "Backup das configurações EasyPanel..."
-    
+
+    log_info "Backup COMPLETO das configurações EasyPanel..."
+
     local config_dir="${BACKUP_DIR}/easypanel_configs"
     mkdir -p "${config_dir}"
-    
+
     # Detectar se precisa usar sudo para Docker
     local docker_cmd="docker"
     if ! docker ps > /dev/null 2>&1; then
@@ -163,115 +163,310 @@ backup_easypanel_configs() {
             docker_cmd="sudo docker"
         fi
     fi
-    
-    # Encontrar containers do n8n
+
+    # 1. Exportar TODOS os containers relacionados ao N8N
+    log_info "Exportando containers N8N..."
     local n8n_containers=$($docker_cmd ps -a --filter "name=n8n" --format "{{.Names}}")
-    
+
     for container in $n8n_containers; do
-        log_info "Exportando configs do container: ${container}"
-        
+        log_info "  → ${container}"
+
+        # Configuração completa do container
+        $docker_cmd inspect "$container" > "${config_dir}/${container}_full_inspect.json"
+
         # Exportar variáveis de ambiente
         $docker_cmd inspect "$container" | jq '.[0].Config.Env' > "${config_dir}/${container}_env.json"
-        
+
         # Exportar volumes
         $docker_cmd inspect "$container" | jq '.[0].Mounts' > "${config_dir}/${container}_volumes.json"
-        
+
         # Exportar labels (importante no EasyPanel!)
         $docker_cmd inspect "$container" | jq '.[0].Config.Labels' > "${config_dir}/${container}_labels.json"
     done
-    
-    # NOVO: Backup da estrutura completa do EasyPanel
+
+    # 2. Exportar containers auxiliares (postgres, redis, pgadmin)
+    log_info "Exportando containers auxiliares..."
+    for service in postgres redis pgadmin; do
+        local aux_containers=$($docker_cmd ps -a --filter "name=${service}" --format "{{.Names}}" 2>/dev/null)
+        for container in $aux_containers; do
+            if [[ "$container" == n8n* ]]; then
+                log_info "  → ${container} (já exportado)"
+            else
+                log_info "  → ${container}"
+                $docker_cmd inspect "$container" > "${config_dir}/${container}_full_inspect.json"
+            fi
+        done
+    done
+
+    # 3. Exportar networks
+    log_info "Exportando Docker networks..."
+    $docker_cmd network ls --format "{{.Name}}" | grep -v -E "^(bridge|host|none)$" > "${config_dir}/networks_list.txt" || true
+
+    while read network; do
+        if [ -n "$network" ]; then
+            log_info "  → ${network}"
+            $docker_cmd network inspect "$network" > "${config_dir}/network_${network}.json" 2>/dev/null || true
+        fi
+    done < "${config_dir}/networks_list.txt"
+
+    # 4. Exportar volumes
+    log_info "Exportando Docker volumes..."
+    $docker_cmd volume ls --format "{{.Name}}" | grep -E "(n8n|postgres|redis)" > "${config_dir}/volumes_list.txt" || true
+
+    while read volume; do
+        if [ -n "$volume" ]; then
+            log_info "  → ${volume}"
+            $docker_cmd volume inspect "$volume" > "${config_dir}/volume_${volume}.json" 2>/dev/null || true
+        fi
+    done < "${config_dir}/volumes_list.txt"
+
+    # 5. Localizar e copiar arquivos do EasyPanel (CRIPTOGRAFADO!)
     log_info "Procurando arquivos de configuração do EasyPanel..."
-    
-    # EasyPanel geralmente armazena configs em /etc/easypanel ou ~/.easypanel
-    if [ -d "/etc/easypanel" ]; then
-        sudo cp -r /etc/easypanel "${config_dir}/easypanel_etc" 2>/dev/null || true
-    fi
-    
-    if [ -d "$HOME/.easypanel" ]; then
-        cp -r "$HOME/.easypanel" "${config_dir}/easypanel_home" 2>/dev/null || true
-    fi
-    
-    # Procurar docker-compose.yml do projeto n8n
-    local possible_paths=(
+
+    local easypanel_paths=(
+        "/etc/easypanel"
+        "$HOME/.easypanel"
+        "/opt/easypanel"
+        "/var/lib/easypanel"
+        "/usr/local/easypanel"
+    )
+
+    for path in "${easypanel_paths[@]}"; do
+        if [ -d "$path" ]; then
+            log_success "  ✓ Encontrado: $path"
+            # Copiar e depois criptografar arquivos sensíveis
+            local temp_dir="${config_dir}/easypanel_$(basename "$path")"
+            sudo cp -r "$path" "$temp_dir" 2>/dev/null || \
+                cp -r "$path" "$temp_dir" 2>/dev/null || \
+                log_warning "  ⚠ Sem permissão para copiar: $path"
+
+            # Criptografar arquivos sensíveis se existir
+            if [ -d "$temp_dir" ]; then
+                find "$temp_dir" -type f \( -name "*.env" -o -name "*.json" -o -name "*.yml" -o -name "*.yaml" \) | while read -r file; do
+                    if [ -f "$file" ]; then
+                        log_info "  🔐 Criptografando: $(basename "$file")"
+                        # Usar função de criptografia do security.sh
+                        source "${SCRIPT_DIR}/lib/security.sh"
+                        load_encryption_key > /dev/null 2>&1
+                        encrypt_file "$file" "${file}.enc" > /dev/null 2>&1
+                        rm "$file" 2>/dev/null || true
+                    fi
+                done
+            fi
+        fi
+    done
+
+    # 6. Procurar docker-compose.yml
+    log_info "Procurando docker-compose.yml..."
+
+    local compose_paths=(
         "/opt/easypanel/projects/n8n/docker-compose.yml"
         "/var/lib/easypanel/projects/n8n/docker-compose.yml"
         "$HOME/easypanel/projects/n8n/docker-compose.yml"
+        "/opt/n8n/docker-compose.yml"
     )
-    
-    for path in "${possible_paths[@]}"; do
+
+    for path in "${compose_paths[@]}"; do
         if [ -f "$path" ]; then
-            log_info "Encontrado docker-compose em: $path"
+            log_success "  ✓ Encontrado: $path"
             cp "$path" "${config_dir}/docker-compose.yml"
-            
-            # Também copiar o diretório inteiro se existir
+
+            # Copiar diretório inteiro do projeto
             local project_dir=$(dirname "$path")
             if [ -d "$project_dir" ]; then
-                sudo cp -r "$project_dir" "${config_dir}/project_full" 2>/dev/null || true
+                sudo cp -r "$project_dir" "${config_dir}/project_directory" 2>/dev/null || \
+                    cp -r "$project_dir" "${config_dir}/project_directory" 2>/dev/null || true
             fi
             break
         fi
     done
-    
-    # Exportar network do Docker
-    $docker_cmd network inspect $($docker_cmd inspect n8n-main 2>/dev/null | jq -r '.[0].NetworkSettings.Networks | keys[0]' 2>/dev/null) \
-        > "${config_dir}/docker_network.json" 2>/dev/null || true
-    
-    # Criar um script de recriação automática
-    cat > "${config_dir}/RECREATE_INSTRUCTIONS.md" << 'EOF'
-# Como Recriar a Estrutura do EasyPanel
 
-## Opção 1: Via EasyPanel (Recomendado)
+    # 7. Gerar script de recriação automática RECREATE.sh
+    log_info "Gerando script de recriação automática..."
+
+    cat > "${config_dir}/RECREATE.sh" << 'EOF'
+#!/bin/bash
+# ============================================
+# Script de Recriação COMPLETA
+# Gerado automaticamente pelo backup N8N
+# ============================================
+
+set -e
+
+echo "╔════════════════════════════════════════╗"
+echo "║   Recriação COMPLETA da Infraestrutura ║"
+echo "╚════════════════════════════════════════╝"
+echo ""
+
+# Verificar se EasyPanel está instalado
+if ! command -v easypanel > /dev/null 2>&1 && ! docker ps | grep -q easypanel; then
+    echo "❌ EasyPanel não encontrado. Instale primeiro:"
+    echo "   curl -fsSL https://get.easypanel.io | bash"
+    exit 1
+fi
+
+echo "[1/4] Recriando networks..."
+EOF
+
+    # Adicionar comandos para recriar networks
+    if [ -f "${config_dir}/networks_list.txt" ]; then
+        while read network; do
+            if [ -n "$network" ]; then
+                local driver=$(jq -r '.[0].Driver // .Driver // "bridge"' "${config_dir}/network_${network}.json" 2>/dev/null || echo "bridge")
+                echo "docker network create --driver ${driver} ${network} 2>/dev/null || true" >> "${config_dir}/RECREATE.sh"
+            fi
+        done < "${config_dir}/networks_list.txt"
+    fi
+
+    cat >> "${config_dir}/RECREATE.sh" << 'EOF'
+
+echo "[2/4] Recriando volumes..."
+EOF
+
+    # Adicionar comandos para volumes
+    if [ -f "${config_dir}/volumes_list.txt" ]; then
+        while read volume; do
+            if [ -n "$volume" ]; then
+                echo "docker volume create ${volume} 2>/dev/null || true" >> "${config_dir}/RECREATE.sh"
+            fi
+        done < "${config_dir}/volumes_list.txt"
+    fi
+
+    cat >> "${config_dir}/RECREATE.sh" << 'EOF'
+
+echo "[3/4] Recriando containers..."
+EOF
+
+    # Gerar comandos docker run para cada container
+    for container in $n8n_containers; do
+        if [ -f "${config_dir}/${container}_full_inspect.json" ]; then
+            local image=$($docker_cmd inspect "$container" 2>/dev/null | jq -r '.[0].Config.Image' 2>/dev/null || jq -r '.[0].Config.Image' "${config_dir}/${container}_full_inspect.json" 2>/dev/null)
+            local network=$($docker_cmd inspect "$container" 2>/dev/null | jq -r '.[0].NetworkSettings.Networks | keys[0]' 2>/dev/null || jq -r '.[0].NetworkSettings.Networks | keys[0]' "${config_dir}/${container}_full_inspect.json" 2>/dev/null || echo "bridge")
+
+            if [ -n "$image" ]; then
+                echo "" >> "${config_dir}/RECREATE.sh"
+                echo "# Container: ${container}" >> "${config_dir}/RECREATE.sh"
+                echo "docker run -d \\" >> "${config_dir}/RECREATE.sh"
+                echo "  --name ${container} \\" >> "${config_dir}/RECREATE.sh"
+                echo "  --network ${network} \\" >> "${config_dir}/RECREATE.sh"
+
+                # Adicionar variáveis de ambiente
+                if [ -f "${config_dir}/${container}_env.json" ]; then
+                    jq -r '.[]' "${config_dir}/${container}_env.json" 2>/dev/null | while read env; do
+                        echo "  -e \"${env}\" \\" >> "${config_dir}/RECREATE.sh"
+                    done
+                fi
+
+                # Adicionar volumes
+                if [ -f "${config_dir}/${container}_volumes.json" ]; then
+                    jq -r '.[] | "-v \(.Source):\(.Destination)"' "${config_dir}/${container}_volumes.json" 2>/dev/null | while read vol; do
+                        echo "  ${vol} \\" >> "${config_dir}/RECREATE.sh"
+                    done
+                fi
+
+                # Adicionar labels
+                if [ -f "${config_dir}/${container}_labels.json" ]; then
+                    jq -r 'to_entries[] | "--label \"\(.key)=\(.value)\""' "${config_dir}/${container}_labels.json" 2>/dev/null | while read label; do
+                        echo "  ${label} \\" >> "${config_dir}/RECREATE.sh"
+                    done
+                fi
+
+                echo "  ${image}" >> "${config_dir}/RECREATE.sh"
+            fi
+        fi
+    done
+
+    # Adicionar containers auxiliares
+    for service in postgres redis pgadmin; do
+        local aux_containers=$($docker_cmd ps -a --filter "name=${service}" --format "{{.Names}}" 2>/dev/null)
+        for container in $aux_containers; do
+            if [[ "$container" != n8n* ]] && [ -f "${config_dir}/${container}_full_inspect.json" ]; then
+                local image=$(jq -r '.[0].Config.Image' "${config_dir}/${container}_full_inspect.json" 2>/dev/null)
+                local network=$(jq -r '.[0].NetworkSettings.Networks | keys[0]' "${config_dir}/${container}_full_inspect.json" 2>/dev/null || echo "bridge")
+
+                if [ -n "$image" ]; then
+                    echo "" >> "${config_dir}/RECREATE.sh"
+                    echo "# Container auxiliar: ${container}" >> "${config_dir}/RECREATE.sh"
+                    echo "docker run -d \\" >> "${config_dir}/RECREATE.sh"
+                    echo "  --name ${container} \\" >> "${config_dir}/RECREATE.sh"
+                    echo "  --network ${network} \\" >> "${config_dir}/RECREATE.sh"
+                    echo "  ${image}" >> "${config_dir}/RECREATE.sh"
+                fi
+            fi
+        done
+    done
+
+    cat >> "${config_dir}/RECREATE.sh" << 'EOF'
+
+echo "[4/4] Verificação final..."
+docker ps --filter "name=n8n" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+echo ""
+echo "✅ Recriação concluída!"
+echo ""
+echo "📋 Próximos passos:"
+echo "  1. Acesse o EasyPanel: http://localhost:3000"
+echo "  2. Adicione os containers existentes ao EasyPanel (opcional)"
+echo "  3. Execute o restore do banco N8N"
+echo ""
+EOF
+
+    chmod +x "${config_dir}/RECREATE.sh"
+
+    # 8. Criar README com instruções
+    cat > "${config_dir}/README.md" << 'EOF'
+# Backup Completo do Schema EasyPanel N8N
+
+Este backup contém TODA a estrutura necessária para recriar o ambiente N8N completo.
+
+## 📁 Conteúdo
+
+- `*_full_inspect.json` - Configuração completa de cada container
+- `network_*.json` - Configuração das Docker networks
+- `volume_*.json` - Informações dos volumes
+- `easypanel_*` - Arquivos de configuração do EasyPanel (criptografados)
+- `docker-compose.yml` - Compose file original (se encontrado)
+- `RECREATE.sh` - Script automático de recriação completa
+
+## 🔄 Como Restaurar
+
+### Opção 1: Disaster Recovery Completo
+```bash
+# Execute o script de recriação
+chmod +x RECREATE.sh
+./RECREATE.sh
+```
+
+### Opção 2: Via EasyPanel (Recomendado)
 1. Instale o EasyPanel na nova VM
 2. Use os arquivos `*_env.json` para recriar cada serviço
 3. Configure os volumes conforme `*_volumes.json`
 
-## Opção 2: Via Docker Compose
-1. Copie `docker-compose.yml` para a nova VM
-2. Execute: `docker-compose up -d`
+### Opção 3: Via Docker Compose
+```bash
+# Se docker-compose.yml existe neste backup:
+docker-compose up -d
+```
 
-## Opção 3: Manual via Docker
-Execute os comandos em `docker_recreate_commands.sh`
+### Opção 4: Manual via Docker
+Execute os comandos em `RECREATE.sh` individualmente.
+
+## ⚠️ IMPORTANTE
+
+Após recriar os containers, você ainda precisa:
+1. Restaurar o banco PostgreSQL: `gunzip < n8n_dump.sql.gz | docker exec -i n8n_postgres psql -U postgres -d n8n`
+2. Verificar se as credenciais do N8N estão corretas
+3. Reiniciar os containers: `docker restart n8n-main n8n-worker n8n-webhook`
+
+## 📝 Containers Incluídos
+
 EOF
-    
-    # NOVO: Gerar comandos docker run para recriação manual
-    cat > "${config_dir}/docker_recreate_commands.sh" << 'EOFSCRIPT'
-#!/bin/bash
-# Comandos para recriar os containers manualmente
-# Gerado automaticamente pelo sistema de backup
 
-EOFSCRIPT
-    
-    for container in $n8n_containers; do
-        # Extrair comando docker run equivalente (aproximado)
-        local image=$($docker_cmd inspect "$container" | jq -r '.[0].Config.Image')
-        local network=$($docker_cmd inspect "$container" | jq -r '.[0].NetworkSettings.Networks | keys[0]')
-        
-        cat >> "${config_dir}/docker_recreate_commands.sh" << EOFCMD
+    echo "$n8n_containers" >> "${config_dir}/README.md"
+    echo "" >> "${config_dir}/README.md"
+    echo "**Data do backup:** ${TIMESTAMP}" >> "${config_dir}/README.md"
 
-# Container: ${container}
-docker run -d \\
-  --name ${container} \\
-  --network ${network} \\
-EOFCMD
-        
-        # Adicionar variáveis de ambiente
-        $docker_cmd inspect "$container" | jq -r '.[0].Config.Env[]' | while read env; do
-            echo "  -e \"${env}\" \\" >> "${config_dir}/docker_recreate_commands.sh"
-        done
-        
-        # Adicionar volumes
-        $docker_cmd inspect "$container" | jq -r '.[0].Mounts[] | "-v \(.Source):\(.Destination)"' | while read vol; do
-            echo "  ${vol} \\" >> "${config_dir}/docker_recreate_commands.sh"
-        done
-        
-        echo "  ${image}" >> "${config_dir}/docker_recreate_commands.sh"
-        echo "" >> "${config_dir}/docker_recreate_commands.sh"
-    done
-    
-    chmod +x "${config_dir}/docker_recreate_commands.sh"
-    
-    log_success "Configs EasyPanel exportadas (incluindo estrutura completa)"
+    log_success "Backup COMPLETO do schema EasyPanel finalizado"
 }
 
 # Backup da chave de criptografia (agora seguro)
