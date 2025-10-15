@@ -46,10 +46,30 @@ apt install -y \
 echo -e "${GREEN}✓ Dependências básicas instaladas${NC}"
 
 echo -e "${BLUE}[3/8]${NC} Instalando Docker..."
-curl -fsSL https://get.docker.com | sh -s
-systemctl enable docker
-systemctl start docker
-echo -e "${GREEN}✓ Docker instalado${NC}"
+
+# Verificar se Docker já está instalado
+if command -v docker > /dev/null 2>&1; then
+    echo -e "${YELLOW}Docker já instalado, pulando...${NC}"
+else
+    curl -fsSL https://get.docker.com | sh -s
+fi
+
+# Garantir que Docker está rodando
+systemctl enable docker 2>/dev/null || true
+systemctl start docker 2>/dev/null || true
+
+# Aguardar Docker iniciar
+echo -e "${YELLOW}Aguardando Docker iniciar...${NC}"
+sleep 5
+
+# Testar Docker
+if docker ps > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ Docker instalado e funcionando${NC}"
+else
+    echo -e "${RED}✗ Docker não está funcionando${NC}"
+    echo "Verifique: systemctl status docker"
+    exit 1
+fi
 
 echo -e "${BLUE}[4/8]${NC} Instalando Docker Compose..."
 curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
