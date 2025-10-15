@@ -20,7 +20,7 @@ Este sistema implementa uma arquitetura de alta disponibilidade com:
 │   • N8N (prod)      │
 │   • PostgreSQL      │
 │                     │
-│   Backup a cada 3h  │
+│   Backup automático  │
 └──────────┬──────────┘
            │
            │ Upload automático
@@ -72,7 +72,7 @@ sudo ./backup.sh
 
 ```bash
 # Quando precisar ativar a VM Standby:
-cd standby-vm
+cd /opt/n8n-standby  # ou o diretório onde estão os arquivos
 sudo ./sync-standby.sh
 ```
 
