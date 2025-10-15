@@ -1,3 +1,4 @@
+./debug-supabase.sh
 #!/bin/bash
 # ============================================
 # Debug Supabase - Teste Independente
