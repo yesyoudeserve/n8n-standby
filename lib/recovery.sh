@@ -362,17 +362,22 @@ restore_database() {
     # Detectar container PostgreSQL com múltiplas tentativas
     local postgres_container=""
     local retries=5
-    
+
     log_info "Detectando container PostgreSQL..."
     for i in $(seq 1 $retries); do
-        # Tentar detectar container
-        postgres_container=$(docker_exec ps --filter "name=postgres" --format "{{.Names}}" 2>/dev/null | grep -i postgres | head -1)
-        
+        # Tentar detectar container PostgreSQL (priorizar n8n_postgres)
+        postgres_container=$(docker_exec ps --filter "name=n8n_postgres" --format "{{.Names}}" 2>/dev/null | head -1)
+
+        # Se não encontrou, tentar qualquer container postgres
+        if [ -z "$postgres_container" ]; then
+            postgres_container=$(docker_exec ps --filter "name=postgres" --format "{{.Names}}" 2>/dev/null | grep -v pgweb | head -1)
+        fi
+
         if [ -n "$postgres_container" ]; then
             log_success "PostgreSQL encontrado: $postgres_container"
             break
         fi
-        
+
         log_info "PostgreSQL não encontrado. Tentativa $i/$retries..."
         sleep 5
     done
