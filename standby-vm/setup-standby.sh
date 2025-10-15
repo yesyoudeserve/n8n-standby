@@ -109,7 +109,24 @@ echo -e "${BLUE}[8/8]${NC} Instalando EasyPanel..."
 if docker ps -a --format 'table {{.Names}}' | grep -q easypanel; then
     echo -e "${YELLOW}EasyPanel já instalado, pulando...${NC}"
 else
-    # Tentar instalar com retry em caso de rate limit
+    # Verificar se há rate limit do Docker Hub
+    if docker pull hello-world 2>&1 | grep -q "toomanyrequests"; then
+        echo -e "${YELLOW}⚠️  Rate limit do Docker Hub detectado!${NC}"
+        echo -e "${BLUE}💡 Soluções recomendadas:${NC}"
+        echo ""
+        echo -e "${YELLOW}1️⃣  Fazer login no Docker Hub:${NC}"
+        echo "   docker login"
+        echo ""
+        echo -e "${YELLOW}2️⃣  Ou criar conta gratuita no Docker Hub:${NC}"
+        echo "   https://hub.docker.com/signup"
+        echo ""
+        echo -e "${YELLOW}3️⃣  Ou aguardar 6 horas para reset do limite${NC}"
+        echo ""
+        echo -e "${RED}Instalação interrompida. Execute novamente após resolver o rate limit.${NC}"
+        exit 1
+    fi
+
+    # Tentar instalar com retry em caso de outros erros
     retry_count=0
     max_retries=3
 
