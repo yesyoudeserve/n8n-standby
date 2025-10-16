@@ -60,15 +60,54 @@ detect_docker_cmd() {
     fi
 }
 
+# Detectar container PostgreSQL (com suporte a sufixos)
+detect_postgres_container() {
+    local DOCKER_CMD=$(detect_docker_cmd)
+    
+    # Buscar container que contenha "postgres" no nome
+    local container=$($DOCKER_CMD ps --format "{{.Names}}" | grep -i "postgres" | grep -v "pgadmin\|pgweb" | head -1)
+    
+    if [ -z "$container" ]; then
+        log_error "Container PostgreSQL não encontrado"
+        $DOCKER_CMD ps --format "table {{.Names}}\t{{.Image}}"
+        return 1
+    fi
+    
+    echo "$container"
+}
+
+# Detectar container Redis (com suporte a sufixos)
+detect_redis_container() {
+    local DOCKER_CMD=$(detect_docker_cmd)
+    
+    # Buscar container que contenha "redis" no nome
+    local container=$($DOCKER_CMD ps --format "{{.Names}}" | grep -i "redis" | head -1)
+    
+    if [ -z "$container" ]; then
+        log_warning "Container Redis não encontrado"
+        return 1
+    fi
+    
+    echo "$container"
+}
+
 # Backup PostgreSQL completo
 backup_postgresql() {
     log_info "🗄️  Backup PostgreSQL..."
     
     local DOCKER_CMD=$(detect_docker_cmd)
+    local POSTGRES_CONTAINER=$(detect_postgres_container)
+    
+    if [ -z "$POSTGRES_CONTAINER" ]; then
+        return 1
+    fi
+    
+    log_info "📦 Container detectado: $POSTGRES_CONTAINER"
+    
     local dump_file="${BACKUP_DIR}/postgresql_dump.sql.gz"
     
     # Dump de TODOS os bancos
-    $DOCKER_CMD exec -i n8n_postgres pg_dumpall -U postgres | gzip > "$dump_file"
+    $DOCKER_CMD exec -i "$POSTGRES_CONTAINER" pg_dumpall -U postgres | gzip > "$dump_file"
     
     if [ $? -eq 0 ]; then
         local size=$(du -h "$dump_file" | cut -f1)

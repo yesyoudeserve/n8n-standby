@@ -58,6 +58,45 @@ detect_docker_cmd() {
     fi
 }
 
+# Detectar container PostgreSQL (com suporte a sufixos)
+detect_postgres_container() {
+    local DOCKER_CMD=$(detect_docker_cmd)
+    
+    # Buscar container que contenha "postgres" no nome
+    local container=$($DOCKER_CMD ps --format "{{.Names}}" | grep -i "postgres" | grep -v "pgadmin\|pgweb" | head -1)
+    
+    if [ -z "$container" ]; then
+        log_error "Container PostgreSQL não encontrado"
+        $DOCKER_CMD ps --format "table {{.Names}}\t{{.Image}}"
+        return 1
+    fi
+    
+    echo "$container"
+}
+
+# Detectar container Redis (com suporte a sufixos)
+detect_redis_container() {
+    local DOCKER_CMD=$(detect_docker_cmd)
+    
+    # Buscar container que contenha "redis" no nome
+    local container=$($DOCKER_CMD ps --format "{{.Names}}" | grep -i "redis" | head -1)
+    
+    if [ -z "$container" ]; then
+        log_warning "Container Redis não encontrado"
+        return 1
+    fi
+    
+    echo "$container"
+}
+
+# Detectar todos containers N8N
+detect_n8n_containers() {
+    local DOCKER_CMD=$(detect_docker_cmd)
+    
+    # Buscar todos containers com "n8n" no nome (exceto postgres/redis)
+    $DOCKER_CMD ps --format "{{.Names}}" | grep -i "n8n" | grep -v "postgres\|redis\|pgadmin\|pgweb"
+}
+
 # Listar backups disponíveis
 list_available_backups() {
     log_info "📋 Listando backups disponíveis..."
