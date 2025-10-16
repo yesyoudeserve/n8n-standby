@@ -68,21 +68,23 @@ show_main_menu() {
     done
 }
 
-# Configurar Oracle Cloud
+# Configurar Oracle Cloud - EXATO como no sistema principal
 configure_oracle() {
-    local enabled oracle_namespace oracle_region oracle_access_key oracle_secret_key oracle_bucket
+    echo ""
+    echo -e "${BLUE}Oracle Cloud Configuration${NC}"
+    echo -e "${BLUE}=========================${NC}"
+    echo ""
 
     # Carregar valores atuais se existirem
     if [ -f "$CONFIG_FILE" ]; then
         source "$CONFIG_FILE"
     fi
 
-    enabled=$(dialog --clear --backtitle "Oracle Cloud Configuration" \
-        --title "Habilitar Oracle Cloud" \
-        --menu "Usar Oracle Cloud para backup?" 10 50 2 \
-        1 "Sim" \
-        2 "Não" \
-        2>&1 >/dev/tty)
+    echo -e "${YELLOW}Usar Oracle Cloud para backup?${NC}"
+    echo "1) Sim"
+    echo "2) Não"
+    echo -n "> "
+    read enabled
 
     case $enabled in
         1) ORACLE_ENABLED=true ;;
@@ -91,37 +93,41 @@ configure_oracle() {
     esac
 
     if [ "$ORACLE_ENABLED" = true ]; then
-        oracle_namespace=$(dialog --clear --backtitle "Oracle Cloud Configuration" \
-            --title "Oracle Namespace" \
-            --inputbox "Digite seu Oracle Namespace:" 8 50 "$ORACLE_NAMESPACE" \
-            2>&1 >/dev/tty)
+        echo ""
+        echo -e "${YELLOW}Oracle Namespace:${NC}"
+        [ -n "$ORACLE_NAMESPACE" ] && echo -e "${CYAN}(Atual: $ORACLE_NAMESPACE)${NC}"
+        echo -n "> "
+        read oracle_namespace
+        [ -n "$oracle_namespace" ] && ORACLE_NAMESPACE="$oracle_namespace"
 
-        oracle_region=$(dialog --clear --backtitle "Oracle Cloud Configuration" \
-            --title "Oracle Region" \
-            --inputbox "Digite sua Oracle Region (ex: eu-madrid-1):" 8 50 "$ORACLE_REGION" \
-            2>&1 >/dev/tty)
+        echo ""
+        echo -e "${YELLOW}Oracle Region (ex: eu-madrid-1):${NC}"
+        [ -n "$ORACLE_REGION" ] && echo -e "${CYAN}(Atual: $ORACLE_REGION)${NC}"
+        echo -n "> "
+        read oracle_region
+        ORACLE_REGION=${oracle_region:-eu-madrid-1}
 
-        oracle_access_key=$(dialog --clear --backtitle "Oracle Cloud Configuration" \
-            --title "Oracle Access Key" \
-            --passwordbox "Digite sua Oracle Access Key:" 8 50 "$ORACLE_ACCESS_KEY" \
-            2>&1 >/dev/tty)
+        echo ""
+        echo -e "${YELLOW}Oracle Access Key:${NC}"
+        echo -n "> "
+        read oracle_access_key
+        [ -n "$oracle_access_key" ] && ORACLE_ACCESS_KEY="$oracle_access_key"
 
-        oracle_secret_key=$(dialog --clear --backtitle "Oracle Cloud Configuration" \
-            --title "Oracle Secret Key" \
-            --passwordbox "Digite sua Oracle Secret Key:" 8 50 \
-            2>&1 >/dev/tty)
+        echo ""
+        echo -e "${YELLOW}Oracle Secret Key:${NC}"
+        echo -n "> "
+        read -s oracle_secret_key
+        echo ""
+        [ -n "$oracle_secret_key" ] && ORACLE_SECRET_KEY="$oracle_secret_key"
 
-        oracle_bucket=$(dialog --clear --backtitle "Oracle Cloud Configuration" \
-            --title "Oracle Bucket" \
-            --inputbox "Digite o nome do bucket Oracle:" 8 50 "$ORACLE_BUCKET" \
-            2>&1 >/dev/tty)
+        echo ""
+        echo -e "${YELLOW}Oracle Bucket (ex: n8n-backups):${NC}"
+        [ -n "$ORACLE_BUCKET" ] && echo -e "${CYAN}(Atual: $ORACLE_BUCKET)${NC}"
+        echo -n "> "
+        read oracle_bucket
+        ORACLE_BUCKET=${oracle_bucket:-n8n-backups}
 
-        # Salvar variáveis
-        ORACLE_NAMESPACE="$oracle_namespace"
-        ORACLE_REGION="$oracle_region"
-        ORACLE_ACCESS_KEY="$oracle_access_key"
-        ORACLE_SECRET_KEY="$oracle_secret_key"
-        ORACLE_BUCKET="$oracle_bucket"
+        echo -e "${GREEN}✓ Oracle configurado${NC}"
     fi
 }
 
