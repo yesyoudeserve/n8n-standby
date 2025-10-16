@@ -4,7 +4,7 @@
 # Executa backup completo de PostgreSQL e Redis
 # ============================================
 
-set -euo pipefail
+set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/config.env"
@@ -135,7 +135,7 @@ backup_redis() {
     
     local redis_file="${BACKUP_DIR}/redis_dump.rdb"
     
-    # Copiar arquivo RDB diretamente (não precisa de SAVE pois Redis persiste automaticamente)
+    # Copiar arquivo RDB diretamente (Redis persiste automaticamente)
     log_info "Copiando dump.rdb..."
     if timeout 30 $DOCKER_CMD cp "$REDIS_CONTAINER:/data/dump.rdb" "$redis_file" 2>/dev/null; then
         if [ -f "$redis_file" ]; then
@@ -148,16 +148,6 @@ backup_redis() {
         fi
     else
         log_warning "Falha ao copiar dump.rdb do Redis (não crítico)"
-        return 0
-    fi
-}
-    
-    if [ -f "$redis_file" ]; then
-        local size=$(du -h "$redis_file" | cut -f1)
-        log_success "Redis backup concluído ($size)"
-        return 0
-    else
-        log_warning "Redis backup não encontrado (pode estar vazio)"
         return 0
     fi
 }
