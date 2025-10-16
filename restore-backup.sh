@@ -142,15 +142,17 @@ download_backup() {
     
     local destination="${RESTORE_DIR}/${filename}"
     
-    if rclone copy "${storage}:${bucket}/${filename}" "$RESTORE_DIR/" --progress 2>&1 | tail -10; then
-        log_success "Download concluído"
+    # Rclone sem progress (evita poluir output)
+    if rclone copy "${storage}:${bucket}/${filename}" "$RESTORE_DIR/" --stats 1s 2>&1 | grep -E "(Transferred|Elapsed)" | tail -3; then
         
         # Verificar se arquivo existe
         if [ -f "$destination" ]; then
+            log_success "Download concluído: $destination"
             echo "$destination"
             return 0
         else
             log_error "Arquivo não foi criado: $destination"
+            ls -la "$RESTORE_DIR/" 2>&1 | head -5
             return 1
         fi
     else
@@ -353,22 +355,25 @@ interactive_restore() {
     # Executar restauração
     send_discord "🚀 **Restauração Iniciada**\n\nBackup: $filename\nStorage: $storage" "info"
     
+    # Download
     local backup_file=$(download_backup "$storage" "$bucket" "$filename")
-    
-    if [ $? -ne 0 ] || [ -z "$backup_file" ]; then
+    if [ $? -ne 0 ] || [ -z "$backup_file" ] || [ ! -f "$backup_file" ]; then
+        log_error "Falha no download do backup"
         send_discord "❌ **Falha no download**" "error"
         exit 1
     fi
     
+    # Extração
     local backup_folder=$(extract_backup "$backup_file")
-    
-    if [ $? -ne 0 ] || [ -z "$backup_folder" ]; then
+    if [ $? -ne 0 ] || [ -z "$backup_folder" ] || [ ! -d "$backup_folder" ]; then
+        log_error "Falha na extração do backup"
         send_discord "❌ **Falha na extração**" "error"
         exit 1
     fi
     
     # Restaurar PostgreSQL
     if ! restore_postgresql "$backup_folder"; then
+        log_error "Falha ao restaurar PostgreSQL"
         send_discord "❌ **Falha ao restaurar PostgreSQL**" "error"
         exit 1
     fi
@@ -405,6 +410,5 @@ main() {
     interactive_restore
 }
 
-trap 'log_error "Restauração falhou"; send_discord "❌ **Restauração falhou na linha $LINENO**" "error"; exit 1' ERR
-
+# Não usar trap ERR pois causa execução fora de ordem
 main "$@"
