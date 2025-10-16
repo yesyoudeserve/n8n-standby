@@ -1,74 +1,40 @@
 #!/bin/bash
 # ============================================
-# Gerar rclone.conf automaticamente
+# Gerador de rclone.conf
 # Arquivo: /opt/n8n-backup/lib/generate-rclone.sh
 # ============================================
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source "${SCRIPT_DIR}/lib/logger.sh"
-
+# Gerar configuração rclone
 generate_rclone_config() {
-    log_info "Gerando configuração rclone..."
-
-    # DEBUG: Mostrar variáveis sendo usadas
-    echo "DEBUG: ORACLE_NAMESPACE=$ORACLE_NAMESPACE"
-    echo "DEBUG: ORACLE_REGION=$ORACLE_REGION"
-    echo "DEBUG: ORACLE_ACCESS_KEY=${ORACLE_ACCESS_KEY:0:8}..."
-    echo "DEBUG: B2_ACCOUNT_ID=${B2_ACCOUNT_ID:0:8}..."
-
-    # VERIFICAR se variáveis estão vazias - se sim, usar valores padrão
-    if [ -z "$ORACLE_NAMESPACE" ] || [ "$ORACLE_NAMESPACE" = "ALTERAR_COM_SEU_NAMESPACE_REAL" ]; then
-        log_warning "ORACLE_NAMESPACE vazio ou padrão - usando valor padrão"
-        ORACLE_NAMESPACE="ALTERAR_COM_SEU_NAMESPACE_REAL"
-    fi
-    if [ -z "$ORACLE_REGION" ] || [ "$ORACLE_REGION" = "eu-madrid-1" ]; then
-        log_warning "ORACLE_REGION vazio ou padrão - usando eu-madrid-1"
-        ORACLE_REGION="eu-madrid-1"
-    fi
-    if [ -z "$ORACLE_ACCESS_KEY" ] || [ "$ORACLE_ACCESS_KEY" = "ALTERAR_COM_SEU_ACCESS_KEY_REAL" ]; then
-        log_warning "ORACLE_ACCESS_KEY vazio ou padrão - usando valor padrão"
-        ORACLE_ACCESS_KEY="ALTERAR_COM_SEU_ACCESS_KEY_REAL"
-    fi
-    if [ -z "$ORACLE_SECRET_KEY" ] || [ "$ORACLE_SECRET_KEY" = "ALTERAR_COM_SEU_SECRET_KEY_REAL" ]; then
-        log_warning "ORACLE_SECRET_KEY vazio ou padrão - usando valor padrão"
-        ORACLE_SECRET_KEY="ALTERAR_COM_SEU_SECRET_KEY_REAL"
-    fi
-    if [ -z "$B2_ACCOUNT_ID" ] || [ "$B2_ACCOUNT_ID" = "ALTERAR_COM_SEU_ACCOUNT_ID_REAL" ]; then
-        log_warning "B2_ACCOUNT_ID vazio ou padrão - usando valor padrão"
-        B2_ACCOUNT_ID="ALTERAR_COM_SEU_ACCOUNT_ID_REAL"
-    fi
-    if [ -z "$B2_APPLICATION_KEY" ] || [ "$B2_APPLICATION_KEY" = "ALTERAR_COM_SUA_APP_KEY_REAL" ]; then
-        log_warning "B2_APPLICATION_KEY vazio ou padrão - usando valor padrão"
-        B2_APPLICATION_KEY="ALTERAR_COM_SUA_APP_KEY_REAL"
-    fi
-
-    # Criar diretório rclone para usuário atual
-    mkdir -p ~/.config/rclone
-
-    # Gerar configuração base com variáveis expandidas
-    cat > ~/.config/rclone/rclone.conf << EOF
-# ============================================
-# Configuração Rclone - Gerada automaticamente
-# Data: $(date)
-# ============================================
+    log_info "🔧 Gerando rclone.conf..."
+    
+    local rclone_dir="${HOME}/.config/rclone"
+    local rclone_conf="${rclone_dir}/rclone.conf"
+    
+    # Criar diretório se não existir
+    mkdir -p "$rclone_dir"
+    
+    # Gerar configuração
+    cat > "$rclone_conf" <<EOF
+# Rclone Configuration - Auto-generated
+# Date: $(date)
 
 [oracle]
 type = s3
 provider = Other
-endpoint = https://$ORACLE_NAMESPACE.compat.objectstorage.$ORACLE_REGION.oraclecloud.com
-access_key_id = $ORACLE_ACCESS_KEY
-secret_access_key = $ORACLE_SECRET_KEY
-region = $ORACLE_REGION
+access_key_id = ${ORACLE_ACCESS_KEY}
+secret_access_key = ${ORACLE_SECRET_KEY}
+region = ${ORACLE_REGION}
+endpoint = ${ORACLE_NAMESPACE}.compat.objectstorage.${ORACLE_REGION}.oraclecloud.com
 acl = private
+no_check_bucket = true
 
 EOF
 
-    # B2 - Verificar se usa chaves separadas
-    if [ "$B2_USE_SEPARATE_KEYS" = true ]; then
-        log_info "Configurando B2 com chaves separadas por bucket..."
-        
-        # Remote para bucket de dados
-        cat >> ~/.config/rclone/rclone.conf << EOF
+    # B2 - verificar se usa chaves separadas
+    if [ "$B2_USE_SEPARATE_KEYS" = "true" ]; then
+        # B2 para dados
+        cat >> "$rclone_conf" <<EOF
 [b2]
 type = b2
 account = ${B2_ACCOUNT_ID}
@@ -80,95 +46,141 @@ type = b2
 account = ${B2_ACCOUNT_ID}
 key = ${B2_CONFIG_KEY}
 hard_delete = false
+
 EOF
-        
-        log_warning "⚠️  B2 configurado com remotes separados:"
-        log_warning "   - 'b2' para ${B2_BUCKET}"
-        log_warning "   - 'b2-config' para ${B2_CONFIG_BUCKET}"
-        
     else
-        # Uma chave para tudo
-        cat >> ~/.config/rclone/rclone.conf << EOF
+        # B2 com chave master única
+        cat >> "$rclone_conf" <<EOF
 [b2]
 type = b2
 account = ${B2_ACCOUNT_ID}
 key = ${B2_APPLICATION_KEY}
 hard_delete = false
+
 EOF
     fi
+    
+    # Definir permissões seguras
+    chmod 600 "$rclone_conf"
+    
+    log_success "rclone.conf gerado em: $rclone_conf"
+    
+    # Se for root, criar também em /root
+    if [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+        local root_rclone_dir="/root/.config/rclone"
+        local root_rclone_conf="${root_rclone_dir}/rclone.conf"
+        
+        mkdir -p "$root_rclone_dir"
+        cp "$rclone_conf" "$root_rclone_conf"
+        chmod 600 "$root_rclone_conf"
+        
+        log_info "rclone.conf também copiado para /root"
+    fi
+    
+    # Testar configuração
+    test_rclone_config
+}
 
-    chmod 600 ~/.config/rclone/rclone.conf
+# Testar configuração rclone
+test_rclone_config() {
+    log_info "🧪 Testando conexões rclone..."
     
-    log_success "Configuração rclone gerada para usuário atual"
+    local all_ok=true
     
-    # Copiar para root (necessário para sudo)
-    log_info "Copiando configuração para root..."
-    sudo mkdir -p /root/.config/rclone
-    sudo cp ~/.config/rclone/rclone.conf /root/.config/rclone/rclone.conf 2>/dev/null || true
-    sudo chown root:root /root/.config/rclone/rclone.conf 2>/dev/null || true
-    sudo chmod 600 /root/.config/rclone/rclone.conf 2>/dev/null || true
-    log_success "Configuração rclone copiada para root"
-    
-    # Testar conexões (como usuário normal)
-    echo ""
-    log_info "Testando conexões (usuário)..."
-    
-    if [ "$ORACLE_ENABLED" = true ]; then
+    # Testar Oracle
+    if [ "$ORACLE_ENABLED" = "true" ]; then
         if rclone lsd oracle: > /dev/null 2>&1; then
-            log_success "✓ Oracle OK (usuário)"
+            log_success "✅ Oracle: OK"
         else
-            log_warning "✗ Oracle falhou (usuário) - verificar credenciais"
+            log_error "❌ Oracle: FALHOU"
+            all_ok=false
         fi
     fi
     
-    if [ "$B2_ENABLED" = true ]; then
+    # Testar B2
+    if [ "$B2_ENABLED" = "true" ]; then
         if rclone lsd b2: > /dev/null 2>&1; then
-            log_success "✓ B2 OK (usuário)"
+            log_success "✅ B2: OK"
         else
-            log_warning "✗ B2 falhou (usuário) - verificar credenciais"
+            log_error "❌ B2: FALHOU"
+            all_ok=false
         fi
         
-        # Testar remote separado se existir
-        if [ "$B2_USE_SEPARATE_KEYS" = true ]; then
+        # Testar b2-config se usar chaves separadas
+        if [ "$B2_USE_SEPARATE_KEYS" = "true" ]; then
             if rclone lsd b2-config: > /dev/null 2>&1; then
-                log_success "✓ B2-Config OK (usuário)"
+                log_success "✅ B2-config: OK"
             else
-                log_warning "✗ B2-Config falhou (usuário) - verificar credenciais"
+                log_error "❌ B2-config: FALHOU"
+                all_ok=false
             fi
         fi
     fi
     
-    # Testar conexões (como root)
-    echo ""
-    log_info "Testando conexões (root)..."
-    
-    if [ "$ORACLE_ENABLED" = true ]; then
-        if sudo rclone lsd oracle: > /dev/null 2>&1; then
-            log_success "✓ Oracle OK (root)"
-        else
-            log_warning "✗ Oracle falhou (root) - verificar credenciais"
-        fi
-    fi
-    
-    if [ "$B2_ENABLED" = true ]; then
-        if sudo rclone lsd b2: > /dev/null 2>&1; then
-            log_success "✓ B2 OK (root)"
-        else
-            log_warning "✗ B2 falhou (root) - verificar credenciais"
-        fi
-        
-        # Testar remote separado se existir
-        if [ "$B2_USE_SEPARATE_KEYS" = true ]; then
-            if sudo rclone lsd b2-config: > /dev/null 2>&1; then
-                log_success "✓ B2-Config OK (root)"
-            else
-                log_warning "✗ B2-Config falhou (root) - verificar credenciais"
-            fi
-        fi
+    if [ "$all_ok" = true ]; then
+        log_success "Todos os storages testados com sucesso"
+        return 0
+    else
+        log_warning "Alguns storages falharam no teste"
+        return 1
     fi
 }
 
-# Executar se chamado diretamente
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    generate_rclone_config
-fi
+# Exportar configuração (para compartilhar entre VMs)
+export_rclone_config() {
+    local output_file="${1:-${SCRIPT_DIR}/rclone.conf.backup}"
+    local rclone_conf="${HOME}/.config/rclone/rclone.conf"
+    
+    if [ ! -f "$rclone_conf" ]; then
+        log_error "rclone.conf não encontrado"
+        return 1
+    fi
+    
+    log_info "📤 Exportando rclone.conf..."
+    
+    # Criptografar antes de exportar
+    openssl enc -aes-256-cbc -salt -pbkdf2 \
+        -pass pass:"$BACKUP_MASTER_PASSWORD" \
+        -in "$rclone_conf" \
+        -out "$output_file" 2>/dev/null
+    
+    if [ $? -eq 0 ]; then
+        log_success "rclone.conf exportado para: $output_file"
+        return 0
+    else
+        log_error "Falha ao exportar rclone.conf"
+        return 1
+    fi
+}
+
+# Importar configuração
+import_rclone_config() {
+    local input_file="${1:-${SCRIPT_DIR}/rclone.conf.backup}"
+    local rclone_dir="${HOME}/.config/rclone"
+    local rclone_conf="${rclone_dir}/rclone.conf"
+    
+    if [ ! -f "$input_file" ]; then
+        log_error "Arquivo não encontrado: $input_file"
+        return 1
+    fi
+    
+    log_info "📥 Importando rclone.conf..."
+    
+    mkdir -p "$rclone_dir"
+    
+    # Descriptografar
+    openssl enc -d -aes-256-cbc -salt -pbkdf2 \
+        -pass pass:"$BACKUP_MASTER_PASSWORD" \
+        -in "$input_file" \
+        -out "$rclone_conf" 2>/dev/null
+    
+    if [ $? -eq 0 ]; then
+        chmod 600 "$rclone_conf"
+        log_success "rclone.conf importado com sucesso"
+        test_rclone_config
+        return 0
+    else
+        log_error "Falha ao importar rclone.conf (senha incorreta?)"
+        return 1
+    fi
+}
