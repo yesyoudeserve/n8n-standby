@@ -61,15 +61,44 @@ fi
 
 echo -e "${BLUE}[4/6]${NC} Instalando EasyPanel..."
 if ! command -v easypanel &> /dev/null; then
-    curl -sSL https://get.easypanel.io | sh
-    echo -e "${GREEN}✓ EasyPanel instalado${NC}"
-    echo ""
-    echo -e "${YELLOW}⚠️  IMPORTANTE: Após este script, acesse EasyPanel em:${NC}"
-    echo -e "${YELLOW}   https://$(curl -s ifconfig.me):3000${NC}"
-    echo -e "${YELLOW}   Configure usuário e senha${NC}"
-    echo ""
+    # Verificar se porta 80 já está em uso
+    if lsof -Pi :80 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
+        echo -e "${YELLOW}⚠️  Porta 80 já em uso. Verificando se é EasyPanel...${NC}"
+        
+        # Verificar se é container EasyPanel
+        if sudo docker ps --format "{{.Names}}" | grep -q "easypanel"; then
+            echo -e "${GREEN}✓ EasyPanel já está instalado e rodando${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Porta 80 ocupada por outro serviço${NC}"
+            echo -e "${YELLOW}   Verifique: sudo lsof -i :80${NC}"
+            echo -e "${YELLOW}   EasyPanel precisa da porta 80 livre${NC}"
+            echo ""
+            read -p "Continuar mesmo assim? (s/N): " continue_anyway
+            if [ "$continue_anyway" != "s" ] && [ "$continue_anyway" != "S" ]; then
+                echo "Setup cancelado"
+                exit 1
+            fi
+        fi
+    else
+        # Porta livre, instalar EasyPanel
+        curl -sSL https://get.easypanel.io | sh
+        echo -e "${GREEN}✓ EasyPanel instalado${NC}"
+        echo ""
+        echo -e "${YELLOW}⚠️  IMPORTANTE: Após este script, acesse EasyPanel em:${NC}"
+        echo -e "${YELLOW}   https://$(curl -s ifconfig.me):3000${NC}"
+        echo -e "${YELLOW}   Configure usuário e senha${NC}"
+        echo ""
+    fi
 else
     echo -e "${YELLOW}⚠️  EasyPanel já instalado${NC}"
+    
+    # Verificar se está rodando
+    if sudo docker ps --format "{{.Names}}" | grep -q "easypanel"; then
+        echo -e "${GREEN}✓ EasyPanel está rodando${NC}"
+    else
+        echo -e "${YELLOW}⚠️  EasyPanel instalado mas não está rodando${NC}"
+        echo -e "${YELLOW}   Tente: sudo docker start \$(sudo docker ps -aq --filter name=easypanel)${NC}"
+    fi
 fi
 
 echo -e "${BLUE}[5/6]${NC} Criando estrutura de diretórios..."
