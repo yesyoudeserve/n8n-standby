@@ -137,26 +137,24 @@ download_backup() {
     local filename=$3
     
     log_info "📥 Baixando backup: $filename"
-    
-    mkdir -p "$RESTORE_DIR"
+    log_info "De: ${storage}:${bucket}/"
     
     local destination="${RESTORE_DIR}/${filename}"
     
-    # Rclone sem progress (evita poluir output)
-    if rclone copy "${storage}:${bucket}/${filename}" "$RESTORE_DIR/" --stats 1s 2>&1 | grep -E "(Transferred|Elapsed)" | tail -3; then
-        
-        # Verificar se arquivo existe
-        if [ -f "$destination" ]; then
-            log_success "Download concluído: $destination"
-            echo "$destination"
-            return 0
-        else
-            log_error "Arquivo não foi criado: $destination"
-            ls -la "$RESTORE_DIR/" 2>&1 | head -5
-            return 1
-        fi
+    # Download com progress
+    log_info "Iniciando download..."
+    rclone copy "${storage}:${bucket}/${filename}" "$RESTORE_DIR/" --progress
+    
+    # Verificar se arquivo existe
+    if [ -f "$destination" ]; then
+        local size=$(du -h "$destination" | cut -f1)
+        log_success "Download concluído: $size"
+        echo "$destination"
+        return 0
     else
-        log_error "Falha no download"
+        log_error "Arquivo não foi criado: $destination"
+        log_error "Conteúdo do diretório:"
+        ls -la "$RESTORE_DIR/" 2>&1
         return 1
     fi
 }
@@ -355,6 +353,11 @@ interactive_restore() {
     # Executar restauração
     send_discord "🚀 **Restauração Iniciada**\n\nBackup: $filename\nStorage: $storage" "info"
     
+    # Limpar diretório de restore anterior
+    log_info "🧹 Limpando restore anterior..."
+    rm -rf "$RESTORE_DIR"
+    mkdir -p "$RESTORE_DIR"
+    
     # Download
     local backup_file=$(download_backup "$storage" "$bucket" "$filename")
     if [ $? -ne 0 ] || [ -z "$backup_file" ] || [ ! -f "$backup_file" ]; then
@@ -405,6 +408,17 @@ main() {
     if [ "$EUID" -ne 0 ]; then 
         echo -e "${RED}❌ Execute como root: sudo $0${NC}"
         exit 1
+    fi
+    
+    # Sincronizar rclone config para root
+    log_info "🔧 Sincronizando configuração rclone..."
+    if [ -f "/home/ubuntu/.config/rclone/rclone.conf" ]; then
+        mkdir -p /root/.config/rclone
+        cp /home/ubuntu/.config/rclone/rclone.conf /root/.config/rclone/rclone.conf
+        chmod 600 /root/.config/rclone/rclone.conf
+        log_success "Rclone sincronizado"
+    else
+        log_warning "Rclone config não encontrado em /home/ubuntu"
     fi
     
     interactive_restore
