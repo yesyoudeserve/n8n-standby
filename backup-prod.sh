@@ -124,13 +124,33 @@ backup_redis() {
     log_info "📦 Backup Redis..."
     
     local DOCKER_CMD=$(detect_docker_cmd)
+    local REDIS_CONTAINER=$(detect_redis_container)
+    
+    if [ -z "$REDIS_CONTAINER" ]; then
+        log_warning "Redis não encontrado, pulando backup"
+        return 0
+    fi
+    
+    log_info "📦 Container detectado: $REDIS_CONTAINER"
+    
     local redis_file="${BACKUP_DIR}/redis_dump.rdb"
     
-    # Forçar save do Redis
-    $DOCKER_CMD exec -i n8n_redis redis-cli SAVE > /dev/null 2>&1
-    
-    # Copiar arquivo RDB
-    $DOCKER_CMD cp n8n_redis:/data/dump.rdb "$redis_file" 2>/dev/null
+    # Copiar arquivo RDB diretamente (não precisa de SAVE pois Redis persiste automaticamente)
+    log_info "Copiando dump.rdb..."
+    if timeout 30 $DOCKER_CMD cp "$REDIS_CONTAINER:/data/dump.rdb" "$redis_file" 2>/dev/null; then
+        if [ -f "$redis_file" ]; then
+            local size=$(du -h "$redis_file" | cut -f1)
+            log_success "Redis backup concluído ($size)"
+            return 0
+        else
+            log_warning "Arquivo Redis não foi criado (não crítico)"
+            return 0
+        fi
+    else
+        log_warning "Falha ao copiar dump.rdb do Redis (não crítico)"
+        return 0
+    fi
+}
     
     if [ -f "$redis_file" ]; then
         local size=$(du -h "$redis_file" | cut -f1)
