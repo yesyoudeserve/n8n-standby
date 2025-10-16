@@ -4,7 +4,7 @@
 # Baixa e restaura último backup disponível
 # ============================================
 
-set -euo pipefail
+set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/config.env"
@@ -13,6 +13,13 @@ source "${SCRIPT_DIR}/lib/logger.sh"
 # Variáveis
 RESTORE_DIR="${BACKUP_LOCAL_DIR}/restore"
 TIMESTAMP=$(date +%Y-%m-%d_%H-%M-%S)
+
+# Cores
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
 # Enviar notificação Discord
 send_discord() {
@@ -62,7 +69,6 @@ detect_docker_cmd() {
 detect_postgres_container() {
     local DOCKER_CMD=$(detect_docker_cmd)
     
-    # Buscar container que contenha "postgres" no nome
     local container=$($DOCKER_CMD ps --format "{{.Names}}" | grep -i "postgres" | grep -v "pgadmin\|pgweb" | head -1)
     
     if [ -z "$container" ]; then
@@ -78,7 +84,6 @@ detect_postgres_container() {
 detect_redis_container() {
     local DOCKER_CMD=$(detect_docker_cmd)
     
-    # Buscar container que contenha "redis" no nome
     local container=$($DOCKER_CMD ps --format "{{.Names}}" | grep -i "redis" | head -1)
     
     if [ -z "$container" ]; then
@@ -93,7 +98,6 @@ detect_redis_container() {
 detect_n8n_containers() {
     local DOCKER_CMD=$(detect_docker_cmd)
     
-    # Buscar todos containers com "n8n" no nome (exceto postgres/redis)
     $DOCKER_CMD ps --format "{{.Names}}" | grep -i "n8n" | grep -v "postgres\|redis\|pgadmin\|pgweb"
 }
 
@@ -104,13 +108,13 @@ list_available_backups() {
     echo ""
     echo "=== ORACLE BACKUPS ==="
     if [ "$ORACLE_ENABLED" = "true" ]; then
-        rclone lsl "oracle:${ORACLE_BUCKET}/" --include "n8n_backup_*.tar.gz" | tail -5 || echo "Nenhum backup encontrado"
+        rclone lsl "oracle:${ORACLE_BUCKET}/" --include "n8n_backup_*.tar.gz" 2>/dev/null | tail -5 || echo "Nenhum backup encontrado"
     fi
     
     echo ""
     echo "=== B2 BACKUPS ==="
     if [ "$B2_ENABLED" = "true" ]; then
-        rclone lsl "b2:${B2_BUCKET}/" --include "n8n_backup_*.tar.gz" | tail -5 || echo "Nenhum backup encontrado"
+        rclone lsl "b2:${B2_BUCKET}/" --include "n8n_backup_*.tar.gz" 2>/dev/null | tail -5 || echo "Nenhum backup encontrado"
     fi
     echo ""
 }
@@ -136,10 +140,19 @@ download_backup() {
     
     mkdir -p "$RESTORE_DIR"
     
-    if rclone copy "${storage}:${bucket}/${filename}" "$RESTORE_DIR/" --progress; then
+    local destination="${RESTORE_DIR}/${filename}"
+    
+    if rclone copy "${storage}:${bucket}/${filename}" "$RESTORE_DIR/" --progress 2>&1 | tail -10; then
         log_success "Download concluído"
-        echo "${RESTORE_DIR}/${filename}"
-        return 0
+        
+        # Verificar se arquivo existe
+        if [ -f "$destination" ]; then
+            echo "$destination"
+            return 0
+        else
+            log_error "Arquivo não foi criado: $destination"
+            return 1
+        fi
     else
         log_error "Falha no download"
         return 1
@@ -151,6 +164,11 @@ extract_backup() {
     local backup_file=$1
     
     log_info "📦 Extraindo backup..."
+    
+    if [ ! -f "$backup_file" ]; then
+        log_error "Arquivo não encontrado: $backup_file"
+        return 1
+    fi
     
     local extract_dir="${RESTORE_DIR}/extracted"
     mkdir -p "$extract_dir"
@@ -174,38 +192,54 @@ extract_backup() {
 restore_postgresql() {
     local backup_folder=$1
     local DOCKER_CMD=$(detect_docker_cmd)
+    local POSTGRES_CONTAINER=$(detect_postgres_container)
+    
+    if [ -z "$POSTGRES_CONTAINER" ]; then
+        return 1
+    fi
     
     log_info "🗄️  Restaurando PostgreSQL..."
+    log_info "📦 Container: $POSTGRES_CONTAINER"
     
     local dump_file="${backup_folder}/postgresql_dump.sql.gz"
     
     if [ ! -f "$dump_file" ]; then
         log_error "Dump PostgreSQL não encontrado: $dump_file"
+        ls -la "$backup_folder/" 2>&1 | head -10
         return 1
     fi
     
-    # Parar containers temporariamente
+    # Parar containers N8N temporariamente
     log_info "Parando containers N8N..."
-    $DOCKER_CMD stop $(docker ps -q --filter "name=n8n") 2>/dev/null || true
+    local n8n_containers=$(detect_n8n_containers)
+    if [ -n "$n8n_containers" ]; then
+        echo "$n8n_containers" | while read container; do
+            $DOCKER_CMD stop "$container" 2>/dev/null || true
+        done
+    fi
     
     # Limpar banco atual
     log_info "Limpando bancos existentes..."
     echo "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname NOT IN ('postgres', 'template0', 'template1');" | \
-        $DOCKER_CMD exec -i n8n_postgres psql -U postgres > /dev/null 2>&1 || true
+        $DOCKER_CMD exec -i "$POSTGRES_CONTAINER" psql -U postgres > /dev/null 2>&1 || true
     
     echo "DROP DATABASE IF EXISTS n8n;" | \
-        $DOCKER_CMD exec -i n8n_postgres psql -U postgres > /dev/null 2>&1 || true
+        $DOCKER_CMD exec -i "$POSTGRES_CONTAINER" psql -U postgres > /dev/null 2>&1 || true
     
     # Restaurar
     log_info "Restaurando dump..."
-    gunzip -c "$dump_file" | $DOCKER_CMD exec -i n8n_postgres psql -U postgres > /dev/null 2>&1
+    gunzip -c "$dump_file" | $DOCKER_CMD exec -i "$POSTGRES_CONTAINER" psql -U postgres > /dev/null 2>&1
     
     if [ $? -eq 0 ]; then
         log_success "PostgreSQL restaurado com sucesso"
         
         # Reiniciar containers
         log_info "Reiniciando containers N8N..."
-        $DOCKER_CMD start $(docker ps -aq --filter "name=n8n") 2>/dev/null || true
+        if [ -n "$n8n_containers" ]; then
+            echo "$n8n_containers" | while read container; do
+                $DOCKER_CMD start "$container" 2>/dev/null || true
+            done
+        fi
         sleep 5
         
         return 0
@@ -219,8 +253,15 @@ restore_postgresql() {
 restore_redis() {
     local backup_folder=$1
     local DOCKER_CMD=$(detect_docker_cmd)
+    local REDIS_CONTAINER=$(detect_redis_container)
+    
+    if [ -z "$REDIS_CONTAINER" ]; then
+        log_warning "Container Redis não encontrado, pulando"
+        return 0
+    fi
     
     log_info "📦 Restaurando Redis..."
+    log_info "📦 Container: $REDIS_CONTAINER"
     
     local redis_file="${backup_folder}/redis_dump.rdb"
     
@@ -230,13 +271,13 @@ restore_redis() {
     fi
     
     # Parar Redis
-    $DOCKER_CMD stop n8n_redis 2>/dev/null || true
+    $DOCKER_CMD stop "$REDIS_CONTAINER" 2>/dev/null || true
     
     # Copiar arquivo RDB
-    $DOCKER_CMD cp "$redis_file" n8n_redis:/data/dump.rdb
+    $DOCKER_CMD cp "$redis_file" "$REDIS_CONTAINER:/data/dump.rdb"
     
     # Reiniciar Redis
-    $DOCKER_CMD start n8n_redis
+    $DOCKER_CMD start "$REDIS_CONTAINER"
     sleep 3
     
     log_success "Redis restaurado com sucesso"
@@ -314,14 +355,14 @@ interactive_restore() {
     
     local backup_file=$(download_backup "$storage" "$bucket" "$filename")
     
-    if [ $? -ne 0 ]; then
+    if [ $? -ne 0 ] || [ -z "$backup_file" ]; then
         send_discord "❌ **Falha no download**" "error"
         exit 1
     fi
     
     local backup_folder=$(extract_backup "$backup_file")
     
-    if [ $? -ne 0 ]; then
+    if [ $? -ne 0 ] || [ -z "$backup_folder" ]; then
         send_discord "❌ **Falha na extração**" "error"
         exit 1
     fi
