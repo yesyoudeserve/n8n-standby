@@ -38,7 +38,7 @@ sudo chown $USER:$USER /opt/n8n-backup
 cd /opt/n8n-backup
 
 # URL do repositório (ALTERAR PARA SEU REPO)
-REPO_URL="https://raw.githubusercontent.com/SEU_USUARIO/n8n-backup/main"
+REPO_URL="https://raw.githubusercontent.com/yesyoudeserve/n8n-standby/main"
 
 echo -e "${BLUE}📥 Baixando arquivos...${NC}"
 

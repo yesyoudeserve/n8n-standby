@@ -29,7 +29,7 @@ Sistema de backup automatizado para N8N com EasyPanel usando duas VMs: **Produç
 
 ```bash
 # 1. Download do projeto
-curl -sSL https://raw.githubusercontent.com/seu-usuario/n8n-backup/main/bootstrap.sh | bash
+curl -sSL https://raw.githubusercontent.com/yesyoudeserve/n8n-standby/main/bootstrap.sh | bash
 cd /opt/n8n-backup
 
 # 2. Executar setup
@@ -48,7 +48,7 @@ sudo ./backup-prod.sh
 
 ```bash
 # 1. Download do projeto
-curl -sSL https://raw.githubusercontent.com/seu-usuario/n8n-backup/main/bootstrap.sh | bash
+curl -sSL https://raw.githubusercontent.com/yesyoudeserve/n8n-standby/main/bootstrap.sh | bash
 cd /opt/n8n-backup
 
 # 2. Executar setup (instala EasyPanel)
