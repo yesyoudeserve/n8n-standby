@@ -69,6 +69,7 @@ Antes de começar, você precisa de:
 - ✅ **N8N rodando** com EasyPanel
 - ✅ **PostgreSQL** configurado
 - ✅ **Sistema de backup** já funcionando
+- ✅ **Senha mestre** configurada no Supabase
 
 ---
 
@@ -204,14 +205,21 @@ Quando precisar ativar a VM Standby:
 # 2. Entrar no diretório
 cd /opt/n8n-standby
 
-# 3. Sincronizar dados mais recentes
+# 3. Carregar configurações do Supabase (se necessário)
+./setup-credentials.sh
+# Escolher: "Carregar do Supabase (Recomendado)"
+
+# 4. Sincronizar dados mais recentes
 sudo ./sync-standby.sh
 
-# 4. Verificar se tudo funcionou
+# 5. Restaurar banco de dados
+sudo ./restore-standby.sh
+
+# 6. Verificar se tudo funcionou
 # - EasyPanel: http://IP-DA-VM:3000
 # - N8N deve estar rodando
 
-# 5. Redirecionar tráfego
+# 7. Redirecionar tráfego
 # - DNS ou Load Balancer para IP da VM Standby
 ```
 
@@ -240,10 +248,17 @@ sudo shutdown -h now
 ```
 standby-vm/
 ├── setup-standby.sh      # Configuração inicial da VM Standby
+├── setup-credentials.sh  # Menu interativo para credenciais (Supabase)
 ├── sync-standby.sh       # Sincronização com dados da nuvem
+├── restore-standby.sh    # Restauração do banco de dados
 ├── backup-production.sh  # Script de backup para VM Principal
 ├── config.env.template   # Template de configuração
-└── README.md            # Esta documentação
+├── README.md            # Esta documentação
+└── lib/                 # Bibliotecas compartilhadas
+    ├── logger.sh
+    ├── security.sh
+    ├── postgres.sh
+    └── generate-rclone.sh
 ```
 
 ## ⚙️ Funcionalidades
@@ -255,6 +270,12 @@ standby-vm/
 - ✅ Configura firewall
 - ✅ Prepara estrutura para sincronização
 
+### Setup Credentials
+- ✅ Menu interativo para configuração
+- ✅ Carregamento automático do Supabase
+- ✅ Validação de credenciais
+- ✅ Salvamento criptografado no Supabase
+
 ### Backup Produção
 - ✅ Backup completo N8N + EasyPanel
 - ✅ Upload para Oracle + B2
@@ -263,9 +284,15 @@ standby-vm/
 
 ### Sync Standby
 - ✅ Baixa dados mais recentes da nuvem
-- ✅ Restaura banco PostgreSQL
-- ✅ Sincroniza configurações
-- ✅ Prepara para ativação
+- ✅ Verificação de integridade
+- ✅ Preparação para restauração
+- ✅ Suporte a modo teste
+
+### Restore Standby
+- ✅ Restauração completa do PostgreSQL
+- ✅ Limpeza segura do banco
+- ✅ Verificação de containers
+- ✅ Confirmação de restauração
 
 ## 🔄 Fluxo de Ativação
 

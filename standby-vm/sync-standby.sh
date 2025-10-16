@@ -203,6 +203,11 @@ else
     echo "   • Desligar a VM principal"
     echo "   • Esta VM agora é a produção"
     echo ""
+    echo -e "${BLUE}🔄 Próximos passos para recuperação:${NC}"
+    echo "   1. Executar: ./restore-standby.sh"
+    echo "   2. Ou restaurar manualmente o banco:"
+    echo "      gunzip < backups/${latest_backup}/n8n_dump.sql.gz | docker exec -i n8n_postgres psql -U n8n -d n8n"
+    echo ""
 fi
 
 # Limpar

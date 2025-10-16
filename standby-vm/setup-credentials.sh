@@ -2,10 +2,17 @@
 # =============================================
 # Setup Interativo de Credenciais
 # Menu para configurar credenciais da VM Standby
+# Baseado no sistema principal com Supabase
 # =============================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/logger.sh"
+
+# Carregar funções do sistema principal
+if [ -f "${SCRIPT_DIR}/../lib/setup.sh" ]; then
+    source "${SCRIPT_DIR}/../lib/setup.sh"
+    source "${SCRIPT_DIR}/../lib/security.sh"
+fi
 
 # Arquivo de configuração
 CONFIG_FILE="${SCRIPT_DIR}/config.env"
@@ -21,13 +28,14 @@ show_main_menu() {
     while true; do
         choice=$(dialog --clear --backtitle "N8N Standby VM - Configuração de Credenciais" \
             --title "Menu Principal" \
-            --menu "Escolha uma opção:" 15 60 6 \
-            1 "Configurar Oracle Cloud" \
-            2 "Configurar Backblaze B2" \
-            3 "Configurar PostgreSQL" \
-            4 "Configurar Segurança" \
-            5 "Testar Configurações" \
-            6 "Salvar e Sair" \
+            --menu "Escolha uma opção:" 15 60 7 \
+            1 "Carregar do Supabase (Recomendado)" \
+            2 "Configurar Oracle Cloud" \
+            3 "Configurar Backblaze B2" \
+            4 "Configurar PostgreSQL" \
+            5 "Configurar Segurança" \
+            6 "Testar Configurações" \
+            7 "Salvar e Sair" \
             2>&1 >/dev/tty)
 
         case $? in
@@ -37,12 +45,13 @@ show_main_menu() {
         esac
 
         case $choice in
-            1) configure_oracle ;;
-            2) configure_b2 ;;
-            3) configure_postgres ;;
-            4) configure_security ;;
-            5) test_configuration ;;
-            6) save_and_exit ;;
+            1) load_from_supabase ;;
+            2) configure_oracle ;;
+            3) configure_b2 ;;
+            4) configure_postgres ;;
+            5) configure_security ;;
+            6) test_configuration ;;
+            7) save_and_exit ;;
         esac
     done
 }
@@ -276,8 +285,59 @@ test_configuration() {
     rm -f "$test_output"
 }
 
+# Carregar do Supabase
+load_from_supabase() {
+    local master_password
+
+    dialog --clear --backtitle "Carregar do Supabase" \
+        --title "Carregar Configurações" \
+        --msgbox "Esta opção irá carregar as configurações criptografadas do Supabase.\n\nVocê precisa da senha mestre usada na VM principal." 10 60
+
+    master_password=$(dialog --clear --backtitle "Carregar do Supabase" \
+        --title "Senha Mestre" \
+        --passwordbox "Digite a senha mestre da VM principal:" 8 50 \
+        2>&1 >/dev/tty)
+
+    if [ -z "$master_password" ]; then
+        dialog --clear --backtitle "Erro" \
+            --title "Senha vazia" \
+            --msgbox "Senha não pode ser vazia." 6 40
+        return
+    fi
+
+    # Tentar carregar do Supabase
+    dialog --clear --backtitle "Carregando..." \
+        --title "Carregando configurações..." \
+        --infobox "Buscando metadados no Supabase..." 5 40
+
+    if load_metadata_from_supabase "$master_password"; then
+        BACKUP_MASTER_PASSWORD="$master_password"
+
+        # Gerar rclone com as credenciais carregadas
+        source "${SCRIPT_DIR}/../lib/generate-rclone.sh"
+        generate_rclone_config > /dev/null 2>&1
+
+        dialog --clear --backtitle "Sucesso!" \
+            --title "Configurações carregadas" \
+            --msgbox "✅ Configurações carregadas com sucesso do Supabase!\n\nAgora você pode testar as configurações." 8 50
+    else
+        dialog --clear --backtitle "Erro" \
+            --title "Falha ao carregar" \
+            --msgbox "❌ Não foi possível carregar as configurações.\n\nVerifique:\n- Senha mestre correta\n- Conexão com internet\n- Configurações salvas na VM principal" 10 50
+    fi
+}
+
 # Salvar e sair
 save_and_exit() {
+    # Salvar metadados no Supabase se temos senha mestre
+    if [ -n "$BACKUP_MASTER_PASSWORD" ]; then
+        dialog --clear --backtitle "Salvando..." \
+            --title "Salvando configurações..." \
+            --infobox "Salvando metadados criptografados no Supabase..." 5 50
+
+        save_metadata_to_supabase
+    fi
+
     # Criar arquivo de configuração
     cat > "$CONFIG_FILE" << EOF
 # ============================================
