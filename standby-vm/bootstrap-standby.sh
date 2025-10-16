@@ -34,12 +34,13 @@ curl -sSL "${REPO_URL}/README.md" -o README.md
 curl -sSL "${REPO_URL}/setup-standby.sh" -o setup-standby.sh
 curl -sSL "${REPO_URL}/sync-standby.sh" -o sync-standby.sh
 curl -sSL "${REPO_URL}/backup-production.sh" -o backup-production.sh
+curl -sSL "${REPO_URL}/setup-credentials.sh" -o setup-credentials.sh
 curl -sSL "${REPO_URL}/config.env.template" -o config.env.template
 
 echo -e "${GREEN}✓ Sistema baixado${NC}"
 
 echo -e "${BLUE}🔧 Configurando permissões...${NC}"
-chmod +x setup-standby.sh sync-standby.sh backup-production.sh
+chmod +x setup-standby.sh sync-standby.sh backup-production.sh setup-credentials.sh
 echo -e "${GREEN}✓ Permissões configuradas${NC}"
 
 echo ""
