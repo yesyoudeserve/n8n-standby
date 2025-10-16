@@ -297,61 +297,117 @@ test_configuration() {
     rm -f "$test_output"
 }
 
-# Carregar do Supabase
+# Carregar do Supabase - EXATAMENTE como no sistema principal
 load_from_supabase() {
-    local master_password
+    echo ""
+    echo -e "${BLUE}🔑 Carregar Configurações do Supabase${NC}"
+    echo -e "${BLUE}=====================================${NC}"
+    echo ""
+    echo -e "${CYAN}Digite sua senha mestre:${NC} "
+    read -s MASTER_PASSWORD
+    echo ""
 
-    dialog --clear --backtitle "Carregar do Supabase" \
-        --title "Carregar Configurações" \
-        --msgbox "Esta opção irá carregar as configurações criptografadas do Supabase.\n\nVocê precisa da senha mestre usada na VM principal." 10 60
+    [ -z "$MASTER_PASSWORD" ] && return 1
 
-    master_password=$(dialog --clear --backtitle "Carregar do Supabase" \
-        --title "Senha Mestre" \
-        --passwordbox "Digite a senha mestre da VM principal:" 8 50 \
-        2>&1 >/dev/tty)
+    log_info "📥 Buscando configuração..."
 
-    if [ -z "$master_password" ]; then
-        dialog --clear --backtitle "Erro" \
-            --title "Senha vazia" \
-            --msgbox "Senha não pode ser vazia." 6 40
-        return
-    fi
+    # Primeiro tentar carregar metadados do Supabase para saber qual storage usar
+    if load_metadata_from_supabase "$MASTER_PASSWORD"; then
+        log_info "Metadados carregados do Supabase - configurando rclone..."
 
-    # Tentar carregar do Supabase
-    dialog --clear --backtitle "Carregando..." \
-        --title "Carregando configurações..." \
-        --infobox "Buscando metadados no Supabase..." 5 40
+        # DEBUG: Verificar variáveis ANTES de gerar rclone
+        echo "DEBUG: Antes do rclone - ORACLE_NAMESPACE=$ORACLE_NAMESPACE"
 
-    if load_metadata_from_supabase "$master_password"; then
-        BACKUP_MASTER_PASSWORD="$master_password"
-
-        # Gerar rclone com as credenciais carregadas
+        # Gerar configuração rclone com as credenciais carregadas
         source "${SCRIPT_DIR}/../lib/generate-rclone.sh"
-        generate_rclone_config > /dev/null 2>&1
+        generate_rclone_config
 
-        dialog --clear --backtitle "Sucesso!" \
-            --title "Configurações carregadas" \
-            --msgbox "✅ Configurações carregadas com sucesso do Supabase!\n\nAgora você pode testar as configurações." 8 50
+        log_success "Rclone configurado com credenciais do Supabase"
     else
-        # Se não conseguiu carregar, oferecer configuração manual
-        dialog --clear --backtitle "Configurações não encontradas" \
-            --title "Configurar Manualmente?" \
-            --yesno "❌ Não foi possível carregar as configurações do Supabase.\n\nPossíveis causas:\n• Primeira instalação\n• Senha incorreta\n• Problemas de conectividade\n\nDeseja configurar manualmente agora?" 12 60
-
-        if [ $? -eq 0 ]; then
-            # Usuário quer configurar manualmente
-            dialog --clear --backtitle "Configuração Manual" \
-                --title "Primeira Configuração" \
-                --msgbox "Vamos configurar tudo manualmente.\n\nSerá necessário:\n• Credenciais Oracle Cloud\n• Credenciais Backblaze B2\n• Senha mestre\n• Configurações PostgreSQL" 10 50
-
-            # Chamar configuração completa
-            configure_manual_setup "$master_password"
-        else
-            dialog --clear --backtitle "Cancelado" \
-                --title "Operação cancelada" \
-                --msgbox "Você pode tentar novamente ou configurar manualmente depois." 6 50
-        fi
+        log_warning "Metadados não encontrados no Supabase, tentando storages diretamente"
+        # Fallback: tentar buckets padrão
+        CONFIG_STORAGE_TYPE="both"
+        CONFIG_BUCKET="both"
     fi
+
+    # Tentar baixar de qualquer storage disponível
+    local found=false
+
+    # Tentar Oracle primeiro
+    if rclone ls "oracle:" > /dev/null 2>&1; then
+        echo "DEBUG: Tentando Oracle..."
+        if rclone copy "oracle:${ORACLE_CONFIG_BUCKET}/config.enc" "${SCRIPT_DIR}/" --quiet 2>/dev/null; then
+            log_info "Encontrado no Oracle"
+            found=true
+        else
+            echo "DEBUG: Oracle falhou"
+        fi
+    else
+        echo "DEBUG: Oracle não disponível"
+    fi
+
+    # Se não achou, tentar B2
+    if [ "$found" = false ] && rclone ls "b2:" > /dev/null 2>&1; then
+        echo "DEBUG: Tentando B2..."
+        local b2_remote="b2"
+        [ "$B2_USE_SEPARATE_KEYS" = "true" ] && b2_remote="b2-config"
+        echo "DEBUG: b2_remote=$b2_remote, B2_CONFIG_BUCKET=$B2_CONFIG_BUCKET"
+        if rclone copy "${b2_remote}:${B2_CONFIG_BUCKET}/config.enc" "${SCRIPT_DIR}/" --quiet 2>/dev/null; then
+            log_info "Encontrado no B2"
+            found=true
+        else
+            echo "DEBUG: B2 falhou"
+        fi
+    else
+        echo "DEBUG: B2 não disponível ou já encontrado"
+    fi
+
+    # DEBUG: Verificar se arquivo foi baixado
+    echo "DEBUG: Verificando se arquivo foi baixado..."
+    echo "DEBUG: found=$found"
+    echo "DEBUG: SCRIPT_DIR: $SCRIPT_DIR"
+    echo "DEBUG: Permissões do diretório:"
+    ls -ld "$SCRIPT_DIR"
+    echo "DEBUG: Arquivos no diretório:"
+    ls -la "${SCRIPT_DIR}/config.enc" 2>/dev/null || echo "DEBUG: Arquivo config.enc não existe no diretório"
+
+    if [ "$found" = false ]; then
+        log_warning "Config não encontrada nos storages"
+        return 1
+    fi
+
+    # Descriptografar
+    if [ -f "$ENCRYPTED_CONFIG_FILE" ]; then
+        echo "DEBUG: Arquivo encontrado: $ENCRYPTED_CONFIG_FILE"
+        echo "DEBUG: Tamanho do arquivo: $(stat -c%s "$ENCRYPTED_CONFIG_FILE" 2>/dev/null || echo 'N/A')"
+        echo "DEBUG: Executando descriptografia..."
+
+        local temp_decrypted="${SCRIPT_DIR}/temp_decrypted.env"
+        openssl enc -d -aes-256-cbc -salt -pbkdf2 \
+            -pass pass:"$MASTER_PASSWORD" \
+            -in "$ENCRYPTED_CONFIG_FILE" \
+            -out "$temp_decrypted" 2>/dev/null
+
+        local openssl_exit_code=$?
+        echo "DEBUG: Código de saída openssl: $openssl_exit_code"
+
+        if [ $openssl_exit_code -eq 0 ]; then
+            echo "DEBUG: Descriptografia bem-sucedida, carregando variáveis..."
+            source "$temp_decrypted"
+            BACKUP_MASTER_PASSWORD="$MASTER_PASSWORD"
+            rm "$temp_decrypted"
+            echo -e "${GREEN}✓ Configuração carregada do cloud!${NC}"
+            return 0
+        else
+            echo "DEBUG: Falha na descriptografia"
+            echo -e "${RED}❌ Senha incorreta ou arquivo corrompido!${NC}"
+            rm "$temp_decrypted" 2>/dev/null
+        fi
+    else
+        echo "DEBUG: Arquivo $ENCRYPTED_CONFIG_FILE não encontrado"
+    fi
+
+    return 1
 }
 
 # Configuração manual completa (fallback quando Supabase falha)
