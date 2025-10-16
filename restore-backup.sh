@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================
 # Script de Restauração VM de Backup
-# Baixa e restaura último backup disponível
+# Versão simplificada e funcional
 # ============================================
 
 set -eo pipefail
@@ -12,7 +12,6 @@ source "${SCRIPT_DIR}/lib/logger.sh"
 
 # Variáveis
 RESTORE_DIR="${BACKUP_LOCAL_DIR}/restore"
-TIMESTAMP=$(date +%Y-%m-%d_%H-%M-%S)
 
 # Cores
 RED='\033[0;31m'
@@ -21,316 +20,64 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Enviar notificação Discord
+# Enviar Discord
 send_discord() {
+    [ -z "$NOTIFY_WEBHOOK" ] && return 0
     local message=$1
-    local level=${2:-"info"}
-    
-    if [ -z "$NOTIFY_WEBHOOK" ]; then
-        return 0
-    fi
-    
     local color="3447003"
-    case $level in
-        warning) color="16776960" ;;
-        error) color="15158332" ;;
-        success) color="3066993" ;;
-    esac
+    [ "$2" = "error" ] && color="15158332"
+    [ "$2" = "success" ] && color="3066993"
     
-    local payload=$(cat <<EOF
-{
-  "embeds": [{
-    "title": "N8N Restore - Backup VM",
-    "description": "$message",
-    "color": $color,
-    "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-    "footer": {"text": "$(hostname)"}
-  }]
-}
-EOF
-)
-    
-    curl -H "Content-Type: application/json" -d "$payload" "$NOTIFY_WEBHOOK" --silent > /dev/null 2>&1 || true
+    curl -s -H "Content-Type: application/json" -d "{\"embeds\":[{\"description\":\"$message\",\"color\":$color}]}" "$NOTIFY_WEBHOOK" > /dev/null 2>&1 || true
 }
 
-# Detectar comando docker
-detect_docker_cmd() {
-    if docker ps > /dev/null 2>&1; then
-        echo "docker"
-    elif sudo docker ps > /dev/null 2>&1; then
-        echo "sudo docker"
-    else
-        log_error "Docker não acessível"
-        exit 1
-    fi
-}
-
-# Detectar container PostgreSQL (com suporte a sufixos)
-detect_postgres_container() {
-    local DOCKER_CMD=$(detect_docker_cmd)
-    
-    local container=$($DOCKER_CMD ps --format "{{.Names}}" | grep -i "postgres" | grep -v "pgadmin\|pgweb" | head -1)
-    
-    if [ -z "$container" ]; then
-        log_error "Container PostgreSQL não encontrado"
-        $DOCKER_CMD ps --format "table {{.Names}}\t{{.Image}}"
-        return 1
-    fi
-    
-    echo "$container"
-}
-
-# Detectar container Redis (com suporte a sufixos)
-detect_redis_container() {
-    local DOCKER_CMD=$(detect_docker_cmd)
-    
-    local container=$($DOCKER_CMD ps --format "{{.Names}}" | grep -i "redis" | head -1)
-    
-    if [ -z "$container" ]; then
-        log_warning "Container Redis não encontrado"
-        return 1
-    fi
-    
-    echo "$container"
-}
-
-# Detectar todos containers N8N
-detect_n8n_containers() {
-    local DOCKER_CMD=$(detect_docker_cmd)
-    
-    $DOCKER_CMD ps --format "{{.Names}}" | grep -i "n8n" | grep -v "postgres\|redis\|pgadmin\|pgweb"
-}
-
-# Listar backups disponíveis
-list_available_backups() {
-    log_info "📋 Listando backups disponíveis..."
-    
+# Listar backups
+list_backups() {
     echo ""
     echo "=== ORACLE BACKUPS ==="
-    if [ "$ORACLE_ENABLED" = "true" ]; then
-        rclone lsl "oracle:${ORACLE_BUCKET}/" --include "n8n_backup_*.tar.gz" 2>/dev/null | tail -5 || echo "Nenhum backup encontrado"
-    fi
+    rclone lsl "oracle:${ORACLE_BUCKET}/" --include "n8n_backup_*.tar.gz" 2>/dev/null | tail -5 || echo "Vazio"
     
     echo ""
     echo "=== B2 BACKUPS ==="
-    if [ "$B2_ENABLED" = "true" ]; then
-        rclone lsl "b2:${B2_BUCKET}/" --include "n8n_backup_*.tar.gz" 2>/dev/null | tail -5 || echo "Nenhum backup encontrado"
-    fi
+    rclone lsl "b2:${B2_BUCKET}/" --include "n8n_backup_*.tar.gz" 2>/dev/null | tail -5 || echo "Vazio"
     echo ""
 }
 
-# Obter último backup
-get_latest_backup() {
+# Pegar último backup
+get_latest() {
     local storage=$1
     local bucket=$2
-    
-    local latest=$(rclone lsl "${storage}:${bucket}/" --include "n8n_backup_*.tar.gz" 2>/dev/null | \
-        tail -1 | awk '{print $NF}')
-    
-    echo "$latest"
+    rclone lsl "${storage}:${bucket}/" --include "n8n_backup_*.tar.gz" 2>/dev/null | tail -1 | awk '{print $NF}'
 }
 
-# Baixar backup
-download_backup() {
-    local storage=$1
-    local bucket=$2
-    local filename=$3
-    
-    log_info "📥 Baixando backup: $filename"
-    log_info "De: ${storage}:${bucket}/"
-    
-    local destination="${RESTORE_DIR}/${filename}"
-    
-    # Download com progress
-    log_info "Iniciando download..."
-    rclone copy "${storage}:${bucket}/${filename}" "$RESTORE_DIR/" --progress
-    
-    # Verificar se arquivo existe
-    if [ -f "$destination" ]; then
-        local size=$(du -h "$destination" | cut -f1)
-        log_success "Download concluído: $size"
-        echo "$destination"
-        return 0
-    else
-        log_error "Arquivo não foi criado: $destination"
-        log_error "Conteúdo do diretório:"
-        ls -la "$RESTORE_DIR/" 2>&1
-        return 1
-    fi
-}
-
-# Extrair backup
-extract_backup() {
-    local backup_file=$1
-    
-    log_info "📦 Extraindo backup..."
-    
-    if [ ! -f "$backup_file" ]; then
-        log_error "Arquivo não encontrado: $backup_file"
-        return 1
+# Main
+main() {
+    if [ "$EUID" -ne 0 ]; then 
+        echo -e "${RED}Execute como root: sudo $0${NC}"
+        exit 1
     fi
     
-    local extract_dir="${RESTORE_DIR}/extracted"
-    mkdir -p "$extract_dir"
-    
-    tar -xzf "$backup_file" -C "$extract_dir"
-    
-    # Encontrar o diretório extraído
-    local backup_folder=$(find "$extract_dir" -maxdepth 1 -type d -name "n8n_backup_*" | head -1)
-    
-    if [ -d "$backup_folder" ]; then
-        log_success "Backup extraído em: $backup_folder"
-        echo "$backup_folder"
-        return 0
-    else
-        log_error "Falha ao extrair backup"
-        return 1
-    fi
-}
-
-# Restaurar PostgreSQL
-restore_postgresql() {
-    local backup_folder=$1
-    local DOCKER_CMD=$(detect_docker_cmd)
-    local POSTGRES_CONTAINER=$(detect_postgres_container)
-    
-    if [ -z "$POSTGRES_CONTAINER" ]; then
-        return 1
-    fi
-    
-    log_info "🗄️  Restaurando PostgreSQL..."
-    log_info "📦 Container: $POSTGRES_CONTAINER"
-    
-    local dump_file="${backup_folder}/postgresql_dump.sql.gz"
-    
-    if [ ! -f "$dump_file" ]; then
-        log_error "Dump PostgreSQL não encontrado: $dump_file"
-        ls -la "$backup_folder/" 2>&1 | head -10
-        return 1
-    fi
-    
-    # Parar containers N8N temporariamente
-    log_info "Parando containers N8N..."
-    local n8n_containers=$(detect_n8n_containers)
-    if [ -n "$n8n_containers" ]; then
-        echo "$n8n_containers" | while read container; do
-            $DOCKER_CMD stop "$container" 2>/dev/null || true
-        done
-    fi
-    
-    # Limpar banco atual
-    log_info "Limpando bancos existentes..."
-    echo "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname NOT IN ('postgres', 'template0', 'template1');" | \
-        $DOCKER_CMD exec -i "$POSTGRES_CONTAINER" psql -U postgres > /dev/null 2>&1 || true
-    
-    echo "DROP DATABASE IF EXISTS n8n;" | \
-        $DOCKER_CMD exec -i "$POSTGRES_CONTAINER" psql -U postgres > /dev/null 2>&1 || true
-    
-    # Restaurar
-    log_info "Restaurando dump..."
-    gunzip -c "$dump_file" | $DOCKER_CMD exec -i "$POSTGRES_CONTAINER" psql -U postgres > /dev/null 2>&1
-    
-    if [ $? -eq 0 ]; then
-        log_success "PostgreSQL restaurado com sucesso"
-        
-        # Reiniciar containers
-        log_info "Reiniciando containers N8N..."
-        if [ -n "$n8n_containers" ]; then
-            echo "$n8n_containers" | while read container; do
-                $DOCKER_CMD start "$container" 2>/dev/null || true
-            done
-        fi
-        sleep 5
-        
-        return 0
-    else
-        log_error "Falha ao restaurar PostgreSQL"
-        return 1
-    fi
-}
-
-# Restaurar Redis
-restore_redis() {
-    local backup_folder=$1
-    local DOCKER_CMD=$(detect_docker_cmd)
-    local REDIS_CONTAINER=$(detect_redis_container)
-    
-    if [ -z "$REDIS_CONTAINER" ]; then
-        log_warning "Container Redis não encontrado, pulando"
-        return 0
-    fi
-    
-    log_info "📦 Restaurando Redis..."
-    log_info "📦 Container: $REDIS_CONTAINER"
-    
-    local redis_file="${backup_folder}/redis_dump.rdb"
-    
-    if [ ! -f "$redis_file" ]; then
-        log_warning "Dump Redis não encontrado (pode estar vazio)"
-        return 0
-    fi
-    
-    # Parar Redis
-    $DOCKER_CMD stop "$REDIS_CONTAINER" 2>/dev/null || true
-    
-    # Copiar arquivo RDB
-    $DOCKER_CMD cp "$redis_file" "$REDIS_CONTAINER:/data/dump.rdb"
-    
-    # Reiniciar Redis
-    $DOCKER_CMD start "$REDIS_CONTAINER"
-    sleep 3
-    
-    log_success "Redis restaurado com sucesso"
-    return 0
-}
-
-# Menu interativo
-interactive_restore() {
-    echo ""
     echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║   RESTAURAR BACKUP - VM DE BACKUP      ║${NC}"
     echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
-    echo ""
     
-    list_available_backups
+    list_backups
     
-    echo ""
-    echo "Escolha o storage:"
-    echo "1) Oracle (último backup)"
-    echo "2) B2 (último backup)"
-    echo "3) Listar todos e escolher"
+    echo "Escolha:"
+    echo "1) Oracle (último)"
+    echo "2) B2 (último)"
     echo "0) Cancelar"
-    echo ""
     read -p "> " choice
     
-    local storage=""
-    local bucket=""
-    local filename=""
-    
+    local storage bucket filename
     case $choice in
-        1)
-            storage="oracle"
-            bucket="$ORACLE_BUCKET"
-            filename=$(get_latest_backup "$storage" "$bucket")
-            ;;
-        2)
-            storage="b2"
-            bucket="$B2_BUCKET"
-            filename=$(get_latest_backup "$storage" "$bucket")
-            ;;
-        3)
-            echo "Feature em desenvolvimento"
-            exit 0
-            ;;
-        0)
-            echo "Cancelado"
-            exit 0
-            ;;
-        *)
-            echo "Opção inválida"
-            exit 1
-            ;;
+        1) storage="oracle"; bucket="$ORACLE_BUCKET" ;;
+        2) storage="b2"; bucket="$B2_BUCKET" ;;
+        0) exit 0 ;;
+        *) echo "Inválido"; exit 1 ;;
     esac
+    
+    filename=$(get_latest "$storage" "$bucket")
     
     if [ -z "$filename" ]; then
         log_error "Nenhum backup encontrado"
@@ -338,91 +85,131 @@ interactive_restore() {
     fi
     
     echo ""
-    echo -e "${YELLOW}Backup selecionado: $filename${NC}"
+    echo -e "${YELLOW}Backup: $filename${NC}"
     echo -e "${YELLOW}Storage: $storage${NC}"
     echo ""
-    echo -e "${RED}⚠️  ATENÇÃO: Esta operação irá SUBSTITUIR todos os dados atuais!${NC}"
-    echo ""
-    read -p "Confirme digitando 'RESTAURAR': " confirm
+    echo -e "${RED}⚠️  Isso vai SUBSTITUIR todos os dados!${NC}"
+    read -p "Digite 'RESTAURAR' para confirmar: " confirm
     
     if [ "$confirm" != "RESTAURAR" ]; then
         echo "Cancelado"
         exit 0
     fi
     
-    # Executar restauração
-    send_discord "🚀 **Restauração Iniciada**\n\nBackup: $filename\nStorage: $storage" "info"
+    send_discord "🚀 Restauração iniciada: $filename" "info"
     
-    # Limpar diretório de restore anterior
-    log_info "🧹 Limpando restore anterior..."
+    # Limpar e criar diretório
     rm -rf "$RESTORE_DIR"
     mkdir -p "$RESTORE_DIR"
     
     # Download
-    local backup_file=$(download_backup "$storage" "$bucket" "$filename")
-    if [ $? -ne 0 ] || [ -z "$backup_file" ] || [ ! -f "$backup_file" ]; then
-        log_error "Falha no download do backup"
-        send_discord "❌ **Falha no download**" "error"
+    log_info "📥 Baixando $filename..."
+    if ! rclone copy "${storage}:${bucket}/${filename}" "$RESTORE_DIR/" --progress; then
+        log_error "Falha no download"
+        send_discord "❌ Download falhou" "error"
         exit 1
     fi
     
-    # Extração
-    local backup_folder=$(extract_backup "$backup_file")
-    if [ $? -ne 0 ] || [ -z "$backup_folder" ] || [ ! -d "$backup_folder" ]; then
-        log_error "Falha na extração do backup"
-        send_discord "❌ **Falha na extração**" "error"
+    local backup_file="${RESTORE_DIR}/${filename}"
+    
+    if [ ! -f "$backup_file" ]; then
+        log_error "Arquivo não encontrado após download"
         exit 1
     fi
+    
+    log_success "Download OK ($(du -h $backup_file | cut -f1))"
+    
+    # Extrair
+    log_info "📦 Extraindo..."
+    tar -xzf "$backup_file" -C "$RESTORE_DIR"
+    
+    local backup_folder=$(find "$RESTORE_DIR" -maxdepth 1 -type d -name "n8n_backup_*" | head -1)
+    
+    if [ ! -d "$backup_folder" ]; then
+        log_error "Falha na extração"
+        exit 1
+    fi
+    
+    log_success "Extraído"
+    
+    # Detectar containers
+    local POSTGRES_CONTAINER=$(docker ps --format "{{.Names}}" | grep -i postgres | grep -v pgadmin | head -1)
+    local REDIS_CONTAINER=$(docker ps --format "{{.Names}}" | grep -i redis | head -1)
+    
+    if [ -z "$POSTGRES_CONTAINER" ]; then
+        log_error "PostgreSQL container não encontrado"
+        exit 1
+    fi
+    
+    log_info "PostgreSQL: $POSTGRES_CONTAINER"
+    [ -n "$REDIS_CONTAINER" ] && log_info "Redis: $REDIS_CONTAINER"
+    
+    # Parar N8N
+    log_info "Parando N8N..."
+    docker ps --format "{{.Names}}" | grep -i n8n | grep -v postgres | grep -v redis | while read c; do
+        docker stop "$c" 2>/dev/null || true
+    done
     
     # Restaurar PostgreSQL
-    if ! restore_postgresql "$backup_folder"; then
-        log_error "Falha ao restaurar PostgreSQL"
-        send_discord "❌ **Falha ao restaurar PostgreSQL**" "error"
+    log_info "🗄️  Restaurando PostgreSQL..."
+    
+    local dump_file="${backup_folder}/postgresql_dump.sql.gz"
+    
+    if [ ! -f "$dump_file" ]; then
+        log_error "Dump não encontrado: $dump_file"
         exit 1
     fi
     
-    # Restaurar Redis
-    restore_redis "$backup_folder"
+    # Limpar bancos
+    docker exec -i "$POSTGRES_CONTAINER" psql -U postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname NOT IN ('postgres','template0','template1');" 2>/dev/null || true
+    docker exec -i "$POSTGRES_CONTAINER" psql -U postgres -c "DROP DATABASE IF EXISTS n8n;" 2>/dev/null || true
     
-    # Limpeza
-    log_info "🧹 Limpando arquivos temporários..."
+    # Restaurar
+    gunzip -c "$dump_file" | docker exec -i "$POSTGRES_CONTAINER" psql -U postgres
+    
+    if [ $? -eq 0 ]; then
+        log_success "PostgreSQL restaurado"
+    else
+        log_error "Falha ao restaurar PostgreSQL"
+        send_discord "❌ Falha PostgreSQL" "error"
+        exit 1
+    fi
+    
+    # Restaurar Redis (se existir)
+    if [ -n "$REDIS_CONTAINER" ]; then
+        local redis_file="${backup_folder}/redis_dump.rdb"
+        
+        if [ -f "$redis_file" ]; then
+            log_info "📦 Restaurando Redis..."
+            docker stop "$REDIS_CONTAINER" 2>/dev/null || true
+            docker cp "$redis_file" "$REDIS_CONTAINER:/data/dump.rdb"
+            docker start "$REDIS_CONTAINER"
+            log_success "Redis restaurado"
+        fi
+    fi
+    
+    # Reiniciar N8N
+    log_info "Reiniciando N8N..."
+    docker ps -a --format "{{.Names}}" | grep -i n8n | grep -v postgres | grep -v redis | while read c; do
+        docker start "$c" 2>/dev/null || true
+    done
+    
+    sleep 5
+    
+    # Limpar
     rm -rf "$RESTORE_DIR"
     
-    log_success "✅ Restauração concluída com sucesso!"
-    send_discord "✅ **Restauração Concluída!**\n\nBackup: $filename\nVM de Backup está pronta para uso." "success"
+    log_success "✅ Restauração concluída!"
+    send_discord "✅ Restauração concluída: $filename" "success"
     
     echo ""
     echo -e "${GREEN}╔════════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║     RESTAURAÇÃO CONCLUÍDA! 🎉          ║${NC}"
     echo -e "${GREEN}╚════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "${BLUE}📋 Status dos Containers:${NC}"
-    docker ps --filter "name=n8n"
-    echo ""
-    echo -e "${YELLOW}💡 Acesse N8N em: http://$(curl -s ifconfig.me):5678${NC}"
+    echo "Containers:"
+    docker ps --format "table {{.Names}}\t{{.Status}}" | grep n8n
     echo ""
 }
 
-# Main
-main() {
-    if [ "$EUID" -ne 0 ]; then 
-        echo -e "${RED}❌ Execute como root: sudo $0${NC}"
-        exit 1
-    fi
-    
-    # Sincronizar rclone config para root
-    log_info "🔧 Sincronizando configuração rclone..."
-    if [ -f "/home/ubuntu/.config/rclone/rclone.conf" ]; then
-        mkdir -p /root/.config/rclone
-        cp /home/ubuntu/.config/rclone/rclone.conf /root/.config/rclone/rclone.conf
-        chmod 600 /root/.config/rclone/rclone.conf
-        log_success "Rclone sincronizado"
-    else
-        log_warning "Rclone config não encontrado em /home/ubuntu"
-    fi
-    
-    interactive_restore
-}
-
-# Não usar trap ERR pois causa execução fora de ordem
 main "$@"
