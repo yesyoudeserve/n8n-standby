@@ -28,14 +28,15 @@ show_main_menu() {
     while true; do
         choice=$(dialog --clear --backtitle "N8N Standby VM - Configuração de Credenciais" \
             --title "Menu Principal" \
-            --menu "Escolha uma opção:" 15 60 7 \
+            --menu "Escolha uma opção:" 15 60 8 \
             1 "Carregar do Supabase (Recomendado)" \
             2 "Configurar Oracle Cloud" \
             3 "Configurar Backblaze B2" \
             4 "Configurar PostgreSQL" \
             5 "Configurar Segurança" \
-            6 "Testar Configurações" \
-            7 "Salvar e Sair" \
+            6 "Editar Configurações Existentes" \
+            7 "Testar Configurações" \
+            8 "Salvar e Sair" \
             2>&1 >/dev/tty)
 
         case $? in
@@ -50,8 +51,9 @@ show_main_menu() {
             3) configure_b2 ;;
             4) configure_postgres ;;
             5) configure_security ;;
-            6) test_configuration ;;
-            7) save_and_exit ;;
+            6) edit_mode ;;
+            7) test_configuration ;;
+            8) save_and_exit ;;
         esac
     done
 }
@@ -321,10 +323,67 @@ load_from_supabase() {
             --title "Configurações carregadas" \
             --msgbox "✅ Configurações carregadas com sucesso do Supabase!\n\nAgora você pode testar as configurações." 8 50
     else
-        dialog --clear --backtitle "Erro" \
-            --title "Falha ao carregar" \
-            --msgbox "❌ Não foi possível carregar as configurações.\n\nVerifique:\n- Senha mestre correta\n- Conexão com internet\n- Configurações salvas na VM principal" 10 50
+        # Se não conseguiu carregar, oferecer configuração manual
+        dialog --clear --backtitle "Configurações não encontradas" \
+            --title "Configurar Manualmente?" \
+            --yesno "❌ Não foi possível carregar as configurações do Supabase.\n\nPossíveis causas:\n• Primeira instalação\n• Senha incorreta\n• Problemas de conectividade\n\nDeseja configurar manualmente agora?" 12 60
+
+        if [ $? -eq 0 ]; then
+            # Usuário quer configurar manualmente
+            dialog --clear --backtitle "Configuração Manual" \
+                --title "Primeira Configuração" \
+                --msgbox "Vamos configurar tudo manualmente.\n\nSerá necessário:\n• Credenciais Oracle Cloud\n• Credenciais Backblaze B2\n• Senha mestre\n• Configurações PostgreSQL" 10 50
+
+            # Chamar configuração completa
+            configure_manual_setup "$master_password"
+        else
+            dialog --clear --backtitle "Cancelado" \
+                --title "Operação cancelada" \
+                --msgbox "Você pode tentar novamente ou configurar manualmente depois." 6 50
+        fi
     fi
+}
+
+# Configuração manual completa (fallback quando Supabase falha)
+configure_manual_setup() {
+    local provided_password="$1"
+
+    dialog --clear --backtitle "Configuração Manual" \
+        --title "Senha Mestre" \
+        --msgbox "Como você já digitou uma senha, vamos usá-la como base.\n\nAgora complete as outras configurações." 8 50
+
+    # Usar a senha fornecida
+    BACKUP_MASTER_PASSWORD="$provided_password"
+
+    # Configurar Oracle
+    configure_oracle
+
+    # Configurar B2
+    configure_b2
+
+    # Configurar PostgreSQL
+    configure_postgres
+
+    # Confirmar senha mestre
+    local confirm_password=$(dialog --clear --backtitle "Confirmar Senha Mestre" \
+        --title "Confirmar Senha" \
+        --passwordbox "Confirme a senha mestre:" 8 50 \
+        2>&1 >/dev/tty)
+
+    if [ "$BACKUP_MASTER_PASSWORD" != "$confirm_password" ]; then
+        dialog --clear --backtitle "Erro" \
+            --title "Senhas não conferem" \
+            --msgbox "As senhas não conferem. Tente novamente." 6 50
+        return
+    fi
+
+    # Gerar rclone
+    source "${SCRIPT_DIR}/../lib/generate-rclone.sh"
+    generate_rclone_config > /dev/null 2>&1
+
+    dialog --clear --backtitle "Sucesso!" \
+        --title "Configuração concluída" \
+        --msgbox "✅ Configuração manual concluída!\n\nAgora você pode salvar e testar as configurações." 8 50
 }
 
 # Salvar e sair
@@ -389,6 +448,170 @@ check_dependencies() {
         log_error "Dialog não encontrado. Instale com: sudo apt install dialog"
         exit 1
     fi
+}
+
+# Modo de edição - permite alterar configurações específicas
+edit_mode() {
+    echo ""
+    echo -e "${BLUE='\033[0;34m'}🔧 Modo de Edição${NC='\033[0m'}"
+    echo -e "${BLUE}=================${NC}"
+
+    # Tentar carregar configuração atual
+    if ! load_encrypted_config; then
+        echo -e "${RED='\033[0;31m'}❌ Não foi possível carregar configuração${NC}"
+        echo "Execute primeiro: ./setup-credentials.sh"
+        return 1
+    fi
+
+    echo ""
+    echo -e "${GREEN='\033[0;32m'}✓ Configuração carregada${NC}"
+    echo ""
+    echo -e "${CYAN='\033[0;36m'}Valores atuais:${NC}"
+    echo "1)  N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:0:10}...${N8N_ENCRYPTION_KEY: -10}"
+    echo "2)  N8N_POSTGRES_PASSWORD: ${N8N_POSTGRES_PASSWORD:0:4}***"
+    echo "3)  ORACLE_NAMESPACE: $ORACLE_NAMESPACE"
+    echo "4)  ORACLE_REGION: $ORACLE_REGION"
+    echo "5)  ORACLE_ACCESS_KEY: ${ORACLE_ACCESS_KEY:0:8}..."
+    echo "6)  ORACLE_SECRET_KEY: ${ORACLE_SECRET_KEY:0:4}***${ORACLE_SECRET_KEY: -4}"
+    echo "7)  ORACLE_BUCKET: $ORACLE_BUCKET"
+    echo "8)  ORACLE_CONFIG_BUCKET: $ORACLE_CONFIG_BUCKET"
+    echo "9)  B2_ACCOUNT_ID: $B2_ACCOUNT_ID"
+    echo "10) B2_APPLICATION_KEY: ${B2_APPLICATION_KEY:0:4}***"
+    echo "11) B2_USE_SEPARATE_KEYS: $B2_USE_SEPARATE_KEYS"
+    echo "12) B2_BUCKET: $B2_BUCKET"
+    echo "13) B2_CONFIG_BUCKET: $B2_CONFIG_BUCKET"
+    echo "14) NOTIFY_WEBHOOK: ${NOTIFY_WEBHOOK:-<vazio>}"
+    echo "15) CONFIG_STORAGE_TYPE: $CONFIG_STORAGE_TYPE"
+    echo ""
+    echo "0)  Salvar alterações e sair"
+    echo ""
+
+    while true; do
+        echo -e "${YELLOW='\033[1;33m'}Qual campo deseja editar? (0 para sair)${NC}"
+        echo -n "> "
+        read choice
+
+        case $choice in
+            0)
+                echo ""
+                echo -e "${YELLOW}Salvando alterações...${NC}"
+                apply_config_to_env
+
+                log_info "Regenerando rclone..."
+                source "${SCRIPT_DIR}/../lib/generate-rclone.sh"
+                generate_rclone_config > /dev/null 2>&1
+
+                save_encrypted_config
+                save_metadata_to_supabase
+
+                echo -e "${GREEN}✓ Configuração atualizada!${NC}"
+                break
+                ;;
+            1)
+                echo -e "${YELLOW}Novo N8N_ENCRYPTION_KEY:${NC}"
+                echo -n "> "
+                read N8N_ENCRYPTION_KEY
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            2)
+                echo -e "${YELLOW}Novo N8N_POSTGRES_PASSWORD:${NC}"
+                echo -n "> "
+                read -s N8N_POSTGRES_PASSWORD
+                echo ""
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            3)
+                echo -e "${YELLOW}Novo ORACLE_NAMESPACE:${NC}"
+                echo -n "> "
+                read ORACLE_NAMESPACE
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            4)
+                echo -e "${YELLOW}Novo ORACLE_REGION:${NC}"
+                echo -n "> "
+                read ORACLE_REGION
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            5)
+                echo -e "${YELLOW}Novo ORACLE_ACCESS_KEY:${NC}"
+                echo -n "> "
+                read ORACLE_ACCESS_KEY
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            6)
+                echo -e "${YELLOW}Novo ORACLE_SECRET_KEY:${NC}"
+                echo -n "> "
+                read -s ORACLE_SECRET_KEY
+                echo ""
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            7)
+                echo -e "${YELLOW}Novo ORACLE_BUCKET:${NC}"
+                echo -n "> "
+                read ORACLE_BUCKET
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            8)
+                echo -e "${YELLOW}Novo ORACLE_CONFIG_BUCKET:${NC}"
+                echo -n "> "
+                read ORACLE_CONFIG_BUCKET
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            9)
+                echo -e "${YELLOW}Novo B2_ACCOUNT_ID:${NC}"
+                echo -n "> "
+                read B2_ACCOUNT_ID
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            10)
+                echo -e "${YELLOW}Novo B2_APPLICATION_KEY:${NC}"
+                echo -n "> "
+                read -s B2_APPLICATION_KEY
+                echo ""
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            11)
+                echo -e "${YELLOW}B2_USE_SEPARATE_KEYS (true/false):${NC}"
+                echo -n "> "
+                read B2_USE_SEPARATE_KEYS
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            12)
+                echo -e "${YELLOW}Novo B2_BUCKET:${NC}"
+                echo -n "> "
+                read B2_BUCKET
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            13)
+                echo -e "${YELLOW}Novo B2_CONFIG_BUCKET:${NC}"
+                echo -n "> "
+                read B2_CONFIG_BUCKET
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            14)
+                echo -e "${YELLOW}Novo NOTIFY_WEBHOOK:${NC}"
+                echo -n "> "
+                read NOTIFY_WEBHOOK
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            15)
+                echo -e "${YELLOW}Novo CONFIG_STORAGE_TYPE (oracle/b2):${NC}"
+                echo -n "> "
+                read CONFIG_STORAGE_TYPE
+                if [ "$CONFIG_STORAGE_TYPE" = "oracle" ]; then
+                    CONFIG_BUCKET="$ORACLE_CONFIG_BUCKET"
+                else
+                    CONFIG_BUCKET="$B2_CONFIG_BUCKET"
+                fi
+                echo -e "${GREEN}✓ Atualizado${NC}"
+                ;;
+            *)
+                echo -e "${RED}❌ Opção inválida${NC}"
+                ;;
+        esac
+
+        echo ""
+    done
 }
 
 # Função principal

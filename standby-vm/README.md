@@ -112,11 +112,14 @@ Após o setup, configure as credenciais:
 ./setup-credentials.sh
 ```
 
-O menu permite configurar:
-- **Oracle Cloud** (namespace, region, access keys)
-- **Backblaze B2** (account ID, application key)
-- **PostgreSQL** (host, user, password)
-- **Segurança** (senha mestre para criptografia)
+O menu permite:
+- **Carregar do Supabase** (recomendado - configura tudo automaticamente)
+- **Configurar Oracle Cloud** (namespace, region, access keys)
+- **Configurar Backblaze B2** (account ID, application key)
+- **Configurar PostgreSQL** (host, user, password)
+- **Configurar Segurança** (senha mestre para criptografia)
+- **Editar Configurações Existentes** (alterar valores já salvos)
+- **Testar Configurações** (validar se tudo está funcionando)
 
 #### **Configuração Manual**
 ```bash
