@@ -22,28 +22,30 @@ TEMPLATE_FILE="${SCRIPT_DIR}/config.env.template"
 DIALOG_CANCEL=1
 DIALOG_ESC=255
 
-# Função para mostrar menu principal
+# Menu principal - baseado exatamente no lib/setup.sh
 show_main_menu() {
+    echo ""
+    echo -e "${BLUE}🔐 N8N Standby VM - Configuração de Credenciais${NC}"
+    echo -e "${BLUE}================================================${NC}"
+    echo ""
+    echo -e "${CYAN}Escolha uma opção:${NC}"
+    echo ""
+    echo -e "${YELLOW}1)${NC} Carregar do Supabase (Recomendado)"
+    echo -e "${YELLOW}2)${NC} Configurar Oracle Cloud"
+    echo -e "${YELLOW}3)${NC} Configurar Backblaze B2"
+    echo -e "${YELLOW}4)${NC} Configurar PostgreSQL"
+    echo -e "${YELLOW}5)${NC} Configurar Segurança"
+    echo -e "${YELLOW}6)${NC} Editar Configurações Existentes"
+    echo -e "${YELLOW}7)${NC} Testar Configurações"
+    echo -e "${YELLOW}8)${NC} Salvar e Sair"
+    echo ""
+    echo -e "${YELLOW}0)${NC} Sair sem salvar"
+    echo ""
+
     local choice
     while true; do
-        choice=$(dialog --clear --backtitle "N8N Standby VM - Configuração de Credenciais" \
-            --title "Menu Principal" \
-            --menu "Escolha uma opção:" 15 60 8 \
-            1 "Carregar do Supabase (Recomendado)" \
-            2 "Configurar Oracle Cloud" \
-            3 "Configurar Backblaze B2" \
-            4 "Configurar PostgreSQL" \
-            5 "Configurar Segurança" \
-            6 "Editar Configurações Existentes" \
-            7 "Testar Configurações" \
-            8 "Salvar e Sair" \
-            2>&1 >/dev/tty)
-
-        case $? in
-            $DIALOG_CANCEL|$DIALOG_ESC)
-                return 1
-                ;;
-        esac
+        echo -e "${CYAN}Digite sua opção (0-8):${NC} "
+        read choice
 
         case $choice in
             1) load_from_supabase ;;
@@ -54,6 +56,14 @@ show_main_menu() {
             6) edit_mode ;;
             7) test_configuration ;;
             8) save_and_exit ;;
+            0)
+                echo -e "${YELLOW}Saindo sem salvar...${NC}"
+                exit 0
+                ;;
+            *)
+                echo -e "${RED}❌ Opção inválida! Digite um número de 0 a 8.${NC}"
+                echo ""
+                ;;
         esac
     done
 }
@@ -618,14 +628,23 @@ edit_mode() {
 main() {
     check_dependencies
 
-    show_banner
+    # Tentar carregar configuração existente primeiro
+    if load_encrypted_config 2>/dev/null; then
+        echo ""
+        echo -e "${GREEN}✓ Configuração existente encontrada!${NC}"
+        echo -e "${CYAN}Carregando configurações salvas...${NC}"
+        apply_config_to_env 2>/dev/null || true
+    else
+        echo ""
+        echo -e "${YELLOW}⚠ Nenhuma configuração encontrada${NC}"
+        echo -e "${CYAN}Iniciando configuração interativa...${NC}"
+    fi
 
     if [ ! -f "$TEMPLATE_FILE" ]; then
         log_error "Arquivo template não encontrado: $TEMPLATE_FILE"
         exit 1
     fi
 
-    log_info "Iniciando configuração interativa..."
     log_info "Arquivo será salvo em: $CONFIG_FILE"
 
     if show_main_menu; then
