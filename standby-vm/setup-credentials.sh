@@ -1,8 +1,8 @@
 #!/bin/bash
-# ============================================
+# =============================================
 # Setup Interativo de Credenciais
 # Menu para configurar credenciais da VM Standby
-# ============================================
+# =============================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/logger.sh"
