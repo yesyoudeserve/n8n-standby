@@ -234,6 +234,11 @@ load_encrypted_config() {
     log_info "📥 Buscando configuração nos storages..."
     echo ""
 
+    # IMPORTANTE: Carregar config.env para ter ORACLE_ENABLED e B2_ENABLED
+    if [ -f "${SCRIPT_DIR}/config.env" ]; then
+        source "${SCRIPT_DIR}/config.env"
+    fi
+
     # Garantir permissões
     mkdir -p "${SCRIPT_DIR}"
     chmod 755 "${SCRIPT_DIR}"
@@ -260,7 +265,8 @@ load_encrypted_config() {
     # ========================================
     # TENTATIVA 1: ORACLE
     # ========================================
-    if [ "$ORACLE_ENABLED" = "true" ] && rclone listremotes 2>/dev/null | grep -q "oracle:"; then
+    # Verificar se rclone tem oracle configurado
+    if rclone listremotes 2>/dev/null | grep -q "oracle:"; then
         log_info "📦 [1/2] Tentando Oracle..."
         
         if check_remote_file_exists "oracle" "$ORACLE_CONFIG_BUCKET" "config.enc"; then
