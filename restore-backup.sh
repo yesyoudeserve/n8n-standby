@@ -133,7 +133,7 @@ main() {
     log_success "Extraído"
     
     # Detectar containers
-    local POSTGRES_CONTAINER=$(docker ps --format "{{.Names}}" | grep -i postgres | grep -v pgadmin | head -1)
+    local POSTGRES_CONTAINER=$(docker ps --format "{{.Names}}" | grep -i "postgres" | grep -v "pgadmin\|pgweb" | head -1)
     local REDIS_CONTAINER=$(docker ps --format "{{.Names}}" | grep -i redis | head -1)
     
     if [ -z "$POSTGRES_CONTAINER" ]; then
